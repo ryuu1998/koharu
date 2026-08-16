@@ -6,6 +6,14 @@ import { invoke as __TAURI_INVOKE, Channel } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
+	browseBatchSource: () => __TAURI_INVOKE<{
+	path: string,
+	default_output: string,
+	chapters: BatchChapter[],
+} | null>("browse_batch_source").then((v) => (v==null?v:({...v,chapters:v.chapters.map(i=>i)}) as typeof v)),
+	browseBatchOutput: () => __TAURI_INVOKE<string | null>("browse_batch_output"),
+	processBatch: (chapters: string[], output: string, jpegQuality: number, overwrite: boolean, onEvent: Channel<BatchEvent>) => __TAURI_INVOKE<BatchReport>("process_batch", { chapters, output, jpegQuality, overwrite, onEvent }),
+	stopBatch: () => __TAURI_INVOKE<null>("stop_batch"),
 	getAgentStatus: () => __TAURI_INVOKE<AgentStatus>("get_agent_status"),
 	loginAgent: (onEvent: Channel<LoginEvent>) => __TAURI_INVOKE<AgentStatus>("login_agent", { onEvent }),
 	logoutAgent: () => __TAURI_INVOKE<AgentStatus>("logout_agent"),
@@ -101,6 +109,35 @@ export type AnalysisRegion = {
 };
 
 export type AtlasCloudConfig = Record<string, never>;
+
+export type BatchChapter = {
+	path: string,
+	name: string,
+	size: number,
+	pages: number,
+	thumbnail: string | null,
+	error: string | null,
+};
+
+export type BatchEvent = { event: "started"; total_chapters: number } | { event: "chapter_started"; index: number; total_chapters: number; name: string; pages: number } | { event: "chapter_progress"; index: number; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage | null } | { event: "chapter_finished"; index: number; output: string } | { event: "chapter_skipped"; index: number; output: string } | { event: "chapter_failed"; index: number; name: string; error: string } | { event: "finished"; completed: number; skipped: number; failed: number; stopped: boolean };
+
+export type BatchFailure = {
+	chapter: string,
+	error: string,
+};
+
+export type BatchReport = {
+	completed: number,
+	skipped: number,
+	failures: BatchFailure[],
+	stopped: boolean,
+};
+
+export type BatchSource = {
+	path: string,
+	default_output: string,
+	chapters: BatchChapter[],
+};
 
 export type Bounds = {
 	x: number,

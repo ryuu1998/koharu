@@ -56,6 +56,10 @@ pub fn bindings() -> tauri_specta::Builder<tauri::Cef> {
 
     Builder::new()
         .commands(collect_commands![
+            crate::batch::browse_batch_source,
+            crate::batch::browse_batch_output,
+            crate::batch::process_batch,
+            crate::batch::stop_batch,
             agent::get_agent_status,
             agent::login_agent,
             agent::logout_agent,

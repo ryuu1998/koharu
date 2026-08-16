@@ -2,6 +2,7 @@ use anyhow::{Context as _, Result};
 use tauri::{AppHandle, Cef, Manager as _, WindowEvent};
 use tokio::sync::Mutex;
 
+use crate::batch::BatchState;
 use crate::commands::{
     agent::AgentState,
     canvas::CanvasChannel,
@@ -88,6 +89,7 @@ pub fn run(context: tauri::Context<Cef>) -> Result<()> {
             application.manage(CurrentProject {
                 project: Mutex::new(None),
             });
+            application.manage(BatchState::default());
             application.manage(ProjectLibrary::new()?);
             application.manage(Processing::default());
             application.manage(CanvasChannel::default());
@@ -201,6 +203,7 @@ pub fn run(context: tauri::Context<Cef>) -> Result<()> {
                 }
                 processing.stops.lock().clear();
                 processing.jobs.lock().clear();
+                window.state::<BatchState>().stop();
                 window.state::<AgentState>().cancel_all();
             }
         })

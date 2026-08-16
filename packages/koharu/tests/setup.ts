@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, vi } from 'vitest'
 
 import { queryClient } from '@/lib/queries'
-import { defaultShortcuts, useKoharuStore } from '@/lib/store'
+import { defaultBatchWorkspace, defaultShortcuts, useKoharuStore } from '@/lib/store'
 
 vi.mock('react-i18next', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-i18next')>()
@@ -88,6 +88,8 @@ beforeEach(() => {
     brush: { diameter: 48, color: '#111111' },
     inspector: 'copy',
     settingsOpen: false,
+    batchOpen: false,
+    batch: defaultBatchWorkspace,
     shortcuts: defaultShortcuts,
   })
 })
