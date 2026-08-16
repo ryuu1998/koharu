@@ -3,6 +3,9 @@
 import { create } from 'zustand'
 
 import type {
+  BatchEvent,
+  BatchReport,
+  BatchSource,
   CanvasState,
   Download,
   EntityId,
@@ -23,6 +26,16 @@ export interface CanvasBrush {
 export type InspectorSection = 'copy' | 'type' | 'layers'
 export type ShortcutAction = CanvasTool | 'fit'
 export type Shortcuts = Record<ShortcutAction, string>
+export type BatchChapterStatus = 'idle' | 'running' | 'completed' | 'skipped' | 'failed'
+export interface BatchWorkspace {
+  source: BatchSource | null
+  output: string
+  selected: string[]
+  running: boolean
+  event: BatchEvent | null
+  report: BatchReport | null
+  statuses: Record<string, BatchChapterStatus>
+}
 
 interface KoharuStore {
   initialized: boolean
@@ -44,10 +57,14 @@ interface KoharuStore {
   brush: CanvasBrush
   inspector: InspectorSection
   settingsOpen: boolean
+  batchOpen: boolean
+  batch: BatchWorkspace
   shortcuts: Shortcuts
   selectPages: (pages: EntityId[]) => void
   showInspector: (section: InspectorSection) => void
   setSettingsOpen: (open: boolean) => void
+  setBatchOpen: (open: boolean) => void
+  updateBatch: (update: Partial<BatchWorkspace>) => void
   selectLayers: (layers: EntityId[]) => void
   setTool: (tool: CanvasTool) => void
   setBrush: (brush: CanvasBrush) => void
@@ -66,6 +83,16 @@ export const defaultShortcuts: Shortcuts = {
   remove: 'j',
   pan: 'h',
   fit: '0',
+}
+
+export const defaultBatchWorkspace: BatchWorkspace = {
+  source: null,
+  output: '',
+  selected: [],
+  running: false,
+  event: null,
+  report: null,
+  statuses: {},
 }
 
 export const useKoharuStore = create<KoharuStore>()((set) => ({
@@ -88,10 +115,15 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   brush: { diameter: 48, color: '#111111' },
   inspector: 'copy',
   settingsOpen: false,
+  batchOpen: false,
+  batch: defaultBatchWorkspace,
   shortcuts: defaultShortcuts,
   selectPages: (selectedPages) => set({ selectedPages: [...new Set(selectedPages)] }),
   showInspector: (inspector) => set({ inspector }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (settingsOpen) =>
+    set({ settingsOpen, ...(settingsOpen ? { batchOpen: false } : {}) }),
+  setBatchOpen: (batchOpen) => set({ batchOpen, ...(batchOpen ? { settingsOpen: false } : {}) }),
+  updateBatch: (update) => set((state) => ({ batch: { ...state.batch, ...update } })),
   selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
   setTool: (tool) => set({ tool }),
   setBrush: (brush) => set({ brush }),

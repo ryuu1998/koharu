@@ -52,12 +52,12 @@ const ARCHIVE_EXTENSIONS: &[&str] = &["zip", "cbz"];
 const MAX_ARCHIVE_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARCHIVE_TOTAL_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
-struct ImportedPage {
-    name: String,
-    bytes: Arc<[u8]>,
-    format: image::ImageFormat,
-    width: u32,
-    height: u32,
+pub(crate) struct ImportedPage {
+    pub(crate) name: String,
+    pub(crate) bytes: Arc<[u8]>,
+    pub(crate) format: image::ImageFormat,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 pub(crate) struct Initialization {
@@ -493,7 +493,7 @@ fn load_image_file(path: &Path) -> Result<ImportedPage> {
     )
 }
 
-fn load_archive(path: &Path) -> Result<Vec<ImportedPage>> {
+pub(crate) fn load_archive(path: &Path) -> Result<Vec<ImportedPage>> {
     let file = fs::File::open(path)
         .with_context(|| format!("failed to open archive {}", path.display()))?;
     let mut archive = zip::ZipArchive::new(file)

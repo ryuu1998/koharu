@@ -1,6 +1,6 @@
 use anyhow::{Context as _, Result};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
-use image::{DynamicImage, ImageFormat};
+use image::{ExtendedColorType, ImageFormat, RgbImage, RgbaImage, codecs::jpeg::JpegEncoder};
 use koharu_psd::{PsdExportOptions, export_page as export_psd_page};
 use koharu_rasterizer::{Raster, RasterOptions, Rasterizer};
 use koharu_renderer::{Frame, Renderer};
@@ -8,8 +8,7 @@ use koharu_scene::{AssetRole, EntityId, Snapshot};
 use serde::Deserialize;
 use specta::Type;
 use std::{
-    fs,
-    io::{Cursor, Seek, Write},
+    io::{Seek, Write},
     path::PathBuf,
     sync::Arc,
 };
@@ -20,6 +19,7 @@ use super::{Error, project::CurrentProject};
 use koharu_desktop::Desktop;
 
 const THUMBNAIL_EDGE: u32 = 128;
+pub(crate) const CBZ_JPEG_QUALITY: u8 = 95;
 
 #[derive(Type)]
 #[specta(transparent)]
@@ -146,7 +146,16 @@ pub(crate) async fn export_pages(
                     };
                     let renderer = desktop.renderer();
                     let rasterizer = desktop.rasterizer().await?;
-                    export_project_cbz(snapshot, renderer, rasterizer, pages, path).await?;
+                    export_project_cbz(
+                        snapshot,
+                        renderer,
+                        rasterizer,
+                        pages,
+                        path,
+                        CBZ_JPEG_QUALITY,
+                        None,
+                    )
+                    .await?;
                 }
             }
         }
@@ -220,17 +229,35 @@ async fn export_project_cbz(
     rasterizer: Arc<Rasterizer>,
     pages: Vec<ExportPage>,
     path: PathBuf,
+    jpeg_quality: u8,
+    comic_info: Option<Vec<u8>>,
 ) -> Result<()> {
+    anyhow::ensure!(
+        (1..=100).contains(&jpeg_quality),
+        "JPEG quality must be between 1 and 100"
+    );
+    let parent = path
+        .parent()
+        .with_context(|| format!("{} has no parent directory", path.display()))?;
+    tokio::fs::create_dir_all(parent).await?;
+    let temporary = tempfile::NamedTempFile::new_in(parent).with_context(|| {
+        format!(
+            "failed to create a temporary archive in {}",
+            parent.display()
+        )
+    })?;
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<(String, Vec<u8>)>(2);
-    let archive_worker = tokio::task::spawn_blocking(move || -> Result<()> {
-        let file = fs::File::create(&path)
-            .with_context(|| format!("failed to create {}", path.display()))?;
-        let mut archive = ZipWriter::new(file);
+    let archive_worker = tokio::task::spawn_blocking(move || -> Result<tempfile::NamedTempFile> {
+        let mut archive = ZipWriter::new(temporary);
         while let Some((name, bytes)) = receiver.blocking_recv() {
             append_cbz_entry(&mut archive, &name, &bytes)?;
         }
-        archive.finish()?;
-        Ok(())
+        if let Some(comic_info) = comic_info {
+            append_cbz_entry(&mut archive, "ComicInfo.xml", &comic_info)?;
+        }
+        let temporary = archive.finish()?;
+        temporary.as_file().sync_all()?;
+        Ok(temporary)
     });
 
     let encoded_pages = stream::iter(pages)
@@ -243,10 +270,10 @@ async fn export_project_cbz(
                 let image = rasterize(rasterizer, &frame, RasterOptions::default())
                     .await?
                     .image;
-                let bytes = tokio::task::spawn_blocking(move || encode_png(image))
+                let bytes = tokio::task::spawn_blocking(move || encode_jpeg(image, jpeg_quality))
                     .await
-                    .context("PNG encode worker stopped unexpectedly")??;
-                Ok::<_, anyhow::Error>((format!("{}.png", page.stem), bytes))
+                    .context("JPEG encode worker stopped unexpectedly")??;
+                Ok::<_, anyhow::Error>((format!("{}.jpg", page.stem), bytes))
             }
         })
         .buffered(4);
@@ -265,11 +292,42 @@ async fn export_project_cbz(
     .context("failed to prepare CBZ pages");
     drop(sender);
 
-    let archive_result = archive_worker
+    let temporary = archive_worker
         .await
         .context("CBZ archive writer stopped unexpectedly")?;
-    archive_result?;
-    export_result
+    let temporary = temporary?;
+    export_result?;
+    temporary
+        .persist(&path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("failed to publish {}", path.display()))?;
+    Ok(())
+}
+
+pub(crate) async fn export_snapshot_cbz(
+    snapshot: Snapshot,
+    renderer: Renderer,
+    rasterizer: Arc<Rasterizer>,
+    path: PathBuf,
+    jpeg_quality: u8,
+    comic_info: Option<Vec<u8>>,
+) -> Result<()> {
+    let pages = snapshot
+        .pages()
+        .enumerate()
+        .map(|(index, page)| export_page_job(&snapshot, page.id(), Some(index)))
+        .collect::<Result<Vec<_>>>()?;
+    anyhow::ensure!(!pages.is_empty(), "there are no pages to export");
+    export_project_cbz(
+        snapshot,
+        renderer,
+        rasterizer,
+        pages,
+        path,
+        jpeg_quality,
+        comic_info,
+    )
+    .await
 }
 
 fn export_page_job(snapshot: &Snapshot, id: EntityId, index: Option<usize>) -> Result<ExportPage> {
@@ -315,10 +373,33 @@ fn page_format(format: PageExportFormat) -> (&'static str, &'static str) {
     }
 }
 
-fn encode_png(image: image::RgbaImage) -> Result<Vec<u8>> {
-    let mut bytes = Cursor::new(Vec::new());
-    DynamicImage::ImageRgba8(image).write_to(&mut bytes, ImageFormat::Png)?;
-    Ok(bytes.into_inner())
+fn encode_jpeg(image: RgbaImage, quality: u8) -> Result<Vec<u8>> {
+    anyhow::ensure!(
+        (1..=100).contains(&quality),
+        "JPEG quality must be between 1 and 100"
+    );
+    let image = composite_on_white(image);
+    let mut bytes = Vec::new();
+    JpegEncoder::new_with_quality(&mut bytes, quality).encode(
+        image.as_raw(),
+        image.width(),
+        image.height(),
+        ExtendedColorType::Rgb8,
+    )?;
+    Ok(bytes)
+}
+
+fn composite_on_white(image: RgbaImage) -> RgbImage {
+    let (width, height) = image.dimensions();
+    let mut pixels = Vec::with_capacity(width as usize * height as usize * 3);
+    for pixel in image.pixels() {
+        let alpha = u16::from(pixel[3]);
+        let inverse = 255 - alpha;
+        for channel in &pixel.0[..3] {
+            pixels.push(((u16::from(*channel) * alpha + 255 * inverse + 127) / 255) as u8);
+        }
+    }
+    RgbImage::from_raw(width, height, pixels).expect("RGB buffer dimensions are exact")
 }
 
 fn append_cbz_entry<W: Write + Seek>(
@@ -403,7 +484,7 @@ async fn rasterize(
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read as _;
+    use std::io::{Cursor, Read as _};
 
     use image::RgbaImage;
 
@@ -417,20 +498,30 @@ mod tests {
     }
 
     #[test]
-    fn writes_png_images_into_cbz_entries() {
-        let png = encode_png(RgbaImage::new(2, 3)).unwrap();
+    fn writes_compact_jpeg_images_into_cbz_entries() {
+        let mut source = RgbaImage::new(2, 3);
+        source.get_pixel_mut(0, 0).0 = [255, 0, 0, 128];
+        let jpeg = encode_jpeg(source, CBZ_JPEG_QUALITY).unwrap();
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        append_cbz_entry(&mut writer, "0001_Page 1.png", &png).unwrap();
+        append_cbz_entry(&mut writer, "0001_Page 1.jpg", &jpeg).unwrap();
 
         let cursor = writer.finish().unwrap();
         let mut archive = zip::ZipArchive::new(cursor).unwrap();
         assert_eq!(archive.len(), 1);
         let mut entry = archive.by_index(0).unwrap();
-        assert_eq!(entry.name(), "0001_Page 1.png");
+        assert_eq!(entry.name(), "0001_Page 1.jpg");
         assert_eq!(entry.compression(), zip::CompressionMethod::Stored);
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).unwrap();
-        let image = image::load_from_memory_with_format(&bytes, ImageFormat::Png).unwrap();
+        let image = image::load_from_memory_with_format(&bytes, ImageFormat::Jpeg).unwrap();
         assert_eq!((image.width(), image.height()), (2, 3));
+    }
+
+    #[test]
+    fn composites_transparency_onto_white_before_jpeg_encoding() {
+        let mut source = RgbaImage::new(1, 1);
+        source.get_pixel_mut(0, 0).0 = [0, 0, 0, 0];
+
+        assert_eq!(composite_on_white(source).get_pixel(0, 0).0, [255; 3]);
     }
 }

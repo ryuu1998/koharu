@@ -54,6 +54,8 @@ export function TitleBar() {
   const selectedLayers = useKoharuStore((state) => state.selectedLayers)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const batchOpen = useKoharuStore((state) => state.batchOpen)
+  const setBatchOpen = useKoharuStore((state) => state.setBatchOpen)
   const requestCanvasFit = useKoharuStore((state) => state.requestCanvasFit)
   const { importPages, importing } = useImportPages()
 
@@ -258,6 +260,16 @@ export function TitleBar() {
               ))}
             </MenubarContent>
           </MenubarMenu>
+
+          <button
+            type='button'
+            aria-pressed={batchOpen}
+            data-active={batchOpen || undefined}
+            className='h-6 rounded-sm px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-primary/10 data-[active]:bg-primary/10 data-[active]:text-foreground'
+            onClick={() => setBatchOpen(true)}
+          >
+            {t('menu.batch')}
+          </button>
 
           <MenubarMenu>
             <MenubarTrigger>{t('menu.view')}</MenubarTrigger>
