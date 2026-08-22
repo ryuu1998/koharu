@@ -12,7 +12,7 @@ export const commands = {
 	chapters: BatchChapter[],
 } | null>("browse_batch_source").then((v) => (v==null?v:({...v,chapters:v.chapters.map(i=>i)}) as typeof v)),
 	browseBatchOutput: () => __TAURI_INVOKE<string | null>("browse_batch_output"),
-	processBatch: (chapters: string[], output: string, jpegQuality: number, overwrite: boolean, onEvent: Channel<BatchEvent>) => __TAURI_INVOKE<BatchReport>("process_batch", { chapters, output, jpegQuality, overwrite, onEvent }),
+	processBatch: (chapters: string[], output: string, jpegQuality: number, overwrite: boolean, translationConcurrency: number, onEvent: Channel<BatchEvent>) => __TAURI_INVOKE<BatchReport>("process_batch", { chapters, output, jpegQuality, overwrite, translationConcurrency, onEvent }),
 	stopBatch: () => __TAURI_INVOKE<null>("stop_batch"),
 	getAgentStatus: () => __TAURI_INVOKE<AgentStatus>("get_agent_status"),
 	loginAgent: (onEvent: Channel<LoginEvent>) => __TAURI_INVOKE<AgentStatus>("login_agent", { onEvent }),
@@ -119,7 +119,7 @@ export type BatchChapter = {
 	error: string | null,
 };
 
-export type BatchEvent = { event: "started"; total_chapters: number } | { event: "chapter_started"; index: number; total_chapters: number; name: string; pages: number } | { event: "chapter_progress"; index: number; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage | null } | { event: "chapter_finished"; index: number; output: string } | { event: "chapter_skipped"; index: number; output: string } | { event: "chapter_failed"; index: number; name: string; error: string } | { event: "finished"; completed: number; skipped: number; failed: number; stopped: boolean };
+export type BatchEvent = { event: "started"; total_chapters: number } | { event: "chapter_started"; index: number; total_chapters: number; name: string; pages: number } | { event: "chapter_progress"; index: number; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage | null } | { event: "chapter_exporting"; index: number; output: string } | { event: "chapter_finished"; index: number; output: string } | { event: "chapter_skipped"; index: number; output: string } | { event: "chapter_failed"; index: number; name: string; error: string } | { event: "finished"; completed: number; skipped: number; failed: number; stopped: boolean };
 
 export type BatchFailure = {
 	chapter: string,

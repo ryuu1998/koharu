@@ -11,6 +11,7 @@ use std::{
     io::{Seek, Write},
     path::PathBuf,
     sync::Arc,
+    time::{Duration, Instant},
 };
 use tauri::{Cef, State, WebviewWindow, ipc::IpcResponse};
 use zip::{ZipWriter, write::SimpleFileOptions};
@@ -61,6 +62,14 @@ pub enum ExportRequest {
 struct ExportPage {
     id: EntityId,
     stem: String,
+}
+
+struct EncodedCbzPage {
+    name: String,
+    bytes: Vec<u8>,
+    render: Duration,
+    rasterize: Duration,
+    encode: Duration,
 }
 
 #[tauri::command]
@@ -232,6 +241,8 @@ async fn export_project_cbz(
     jpeg_quality: u8,
     comic_info: Option<Vec<u8>>,
 ) -> Result<()> {
+    let export_started = Instant::now();
+    let page_count = pages.len();
     anyhow::ensure!(
         (1..=100).contains(&jpeg_quality),
         "JPEG quality must be between 1 and 100"
@@ -266,23 +277,41 @@ async fn export_project_cbz(
             let rasterizer = Arc::clone(&rasterizer);
             let snapshot = snapshot.clone();
             async move {
+                let render_started = Instant::now();
                 let frame = renderer.render(&snapshot, page.id).await?;
+                let render = render_started.elapsed();
+                let rasterize_started = Instant::now();
                 let image = rasterize(rasterizer, &frame, RasterOptions::default())
                     .await?
                     .image;
+                let rasterize = rasterize_started.elapsed();
+                let encode_started = Instant::now();
                 let bytes = tokio::task::spawn_blocking(move || encode_jpeg(image, jpeg_quality))
                     .await
                     .context("JPEG encode worker stopped unexpectedly")??;
-                Ok::<_, anyhow::Error>((format!("{}.jpg", page.stem), bytes))
+                let encode = encode_started.elapsed();
+                Ok::<_, anyhow::Error>(EncodedCbzPage {
+                    name: format!("{}.jpg", page.stem),
+                    bytes,
+                    render,
+                    rasterize,
+                    encode,
+                })
             }
         })
         .buffered(4);
     futures::pin_mut!(encoded_pages);
 
+    let mut render_work = Duration::ZERO;
+    let mut rasterize_work = Duration::ZERO;
+    let mut encode_work = Duration::ZERO;
     let export_result = async {
         while let Some(entry) = encoded_pages.try_next().await? {
+            render_work += entry.render;
+            rasterize_work += entry.rasterize;
+            encode_work += entry.encode;
             sender
-                .send(entry)
+                .send((entry.name, entry.bytes))
                 .await
                 .map_err(|_| anyhow::anyhow!("CBZ archive writer stopped unexpectedly"))?;
         }
@@ -301,6 +330,20 @@ async fn export_project_cbz(
         .persist(&path)
         .map_err(|error| error.error)
         .with_context(|| format!("failed to publish {}", path.display()))?;
+    let archive_bytes = tokio::fs::metadata(&path)
+        .await
+        .map(|metadata| metadata.len())
+        .unwrap_or_default();
+    tracing::info!(
+        output = %path.display(),
+        pages = page_count,
+        archive_bytes,
+        render_page_seconds_sum = render_work.as_secs_f64(),
+        rasterize_page_seconds_sum = rasterize_work.as_secs_f64(),
+        jpeg_page_seconds_sum = encode_work.as_secs_f64(),
+        elapsed_seconds = export_started.elapsed().as_secs_f64(),
+        "CBZ export finished"
+    );
     Ok(())
 }
 
@@ -392,11 +435,17 @@ fn encode_jpeg(image: RgbaImage, quality: u8) -> Result<Vec<u8>> {
 fn composite_on_white(image: RgbaImage) -> RgbImage {
     let (width, height) = image.dimensions();
     let mut pixels = Vec::with_capacity(width as usize * height as usize * 3);
-    for pixel in image.pixels() {
-        let alpha = u16::from(pixel[3]);
-        let inverse = 255 - alpha;
-        for channel in &pixel.0[..3] {
-            pixels.push(((u16::from(*channel) * alpha + 255 * inverse + 127) / 255) as u8);
+    for pixel in image.as_raw().chunks_exact(4) {
+        match pixel[3] {
+            255 => pixels.extend_from_slice(&pixel[..3]),
+            0 => pixels.extend_from_slice(&[255; 3]),
+            alpha => {
+                let alpha = u16::from(alpha);
+                let inverse = 255 - alpha;
+                for channel in &pixel[..3] {
+                    pixels.push(((u16::from(*channel) * alpha + 255 * inverse + 127) / 255) as u8);
+                }
+            }
         }
     }
     RgbImage::from_raw(width, height, pixels).expect("RGB buffer dimensions are exact")
@@ -519,9 +568,12 @@ mod tests {
 
     #[test]
     fn composites_transparency_onto_white_before_jpeg_encoding() {
-        let mut source = RgbaImage::new(1, 1);
-        source.get_pixel_mut(0, 0).0 = [0, 0, 0, 0];
+        let source =
+            RgbaImage::from_raw(3, 1, vec![12, 34, 56, 255, 0, 0, 0, 0, 255, 0, 0, 128]).unwrap();
 
-        assert_eq!(composite_on_white(source).get_pixel(0, 0).0, [255; 3]);
+        assert_eq!(
+            composite_on_white(source).into_raw(),
+            [12, 34, 56, 255, 255, 255, 255, 127, 127]
+        );
     }
 }

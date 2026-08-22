@@ -9,9 +9,11 @@ mod config;
 mod model;
 mod processor;
 
+use std::time::Instant;
+
 use anyhow::{Context, Result};
 use image::DynamicImage;
-use koharu_torch::Device;
+use koharu_torch::{Device, Tensor};
 
 use crate::backend::TryIntoDevice;
 
@@ -35,6 +37,8 @@ pub struct KoharuLayoutRFDetrSeg2XL {
     device: Device,
     model: Model,
     processor: KoharuLayoutRFDetrImageProcessor,
+    mean: Tensor,
+    std: Tensor,
 }
 
 impl KoharuLayoutRFDetrSeg2XL {
@@ -50,6 +54,7 @@ impl KoharuLayoutRFDetrSeg2XL {
             .context("failed to resolve KoharuLayout RF-DETR weights")?;
         let config = KoharuLayoutRFDetrSeg2XLConfig::from_file(&config_path)?;
         let processor = KoharuLayoutRFDetrImageProcessor::new(&config)?;
+        let (mean, std) = processor.normalization(device);
         let mut model = Model::new(device);
         model
             .load(&weights_path)
@@ -58,6 +63,8 @@ impl KoharuLayoutRFDetrSeg2XL {
             device,
             model,
             processor,
+            mean,
+            std,
         })
     }
 
@@ -71,10 +78,25 @@ impl KoharuLayoutRFDetrSeg2XL {
         thresholds: KoharuLayoutThresholds,
     ) -> Result<KoharuLayoutDetections> {
         koharu_torch::no_grad(|| {
-            let pixel_values = self.processor.preprocess(image, self.device)?;
+            let preprocess_started = Instant::now();
+            let pixel_values =
+                self.processor
+                    .preprocess(image, self.device, &self.mean, &self.std)?;
+            let preprocess = preprocess_started.elapsed();
+            let inference_started = Instant::now();
             let output = self.model.forward(&pixel_values);
-            self.processor
-                .postprocess(&output, image.width(), image.height(), thresholds)
+            let detections =
+                self.processor
+                    .postprocess(&output, image.width(), image.height(), thresholds)?;
+            tracing::debug!(
+                width = image.width(),
+                height = image.height(),
+                detections = detections.detections.len(),
+                preprocess_seconds = preprocess.as_secs_f64(),
+                inference_seconds = inference_started.elapsed().as_secs_f64(),
+                "KoharuLayout RF-DETR inference finished"
+            );
+            Ok(detections)
         })
     }
 

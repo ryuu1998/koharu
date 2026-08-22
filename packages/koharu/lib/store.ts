@@ -30,6 +30,7 @@ export type BatchChapterStatus = 'idle' | 'running' | 'completed' | 'skipped' | 
 export interface BatchWorkspace {
   source: BatchSource | null
   output: string
+  translationConcurrency: number
   selected: string[]
   running: boolean
   event: BatchEvent | null
@@ -88,6 +89,7 @@ export const defaultShortcuts: Shortcuts = {
 export const defaultBatchWorkspace: BatchWorkspace = {
   source: null,
   output: '',
+  translationConcurrency: 4,
   selected: [],
   running: false,
   event: null,

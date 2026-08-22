@@ -35,6 +35,14 @@ struct BatchArguments {
     #[arg(long, default_value_t = 95, value_parser = clap::value_parser!(u8).range(1..=100))]
     jpeg_quality: u8,
 
+    /// Maximum simultaneous requests when using a remote translation provider.
+    #[arg(
+        long,
+        default_value_t = app::DEFAULT_REMOTE_TRANSLATION_CONCURRENCY,
+        value_parser = clap::value_parser!(u8).range(1..=8)
+    )]
+    translation_concurrency: u8,
+
     /// Replace output archives that already exist.
     #[arg(long)]
     overwrite: bool,
@@ -50,6 +58,7 @@ impl From<BatchArguments> for app::BatchOptions {
             input: value.input,
             output: value.output,
             jpeg_quality: value.jpeg_quality,
+            translation_concurrency: value.translation_concurrency,
             overwrite: value.overwrite,
             cpu: value.cpu,
         }
@@ -132,6 +141,7 @@ mod tests {
         };
         assert_eq!(arguments.input, Path::new("Manga Project"));
         assert_eq!(arguments.jpeg_quality, 92);
+        assert_eq!(arguments.translation_concurrency, 4);
         assert!(arguments.overwrite);
     }
 }

@@ -3,9 +3,14 @@ use koharu_secrets::ExposeSecret;
 use reqwest::Client;
 
 use super::openai_compatible::{ChatBackend, ResponseMode};
-use crate::{GenerationConfig, Model, Provider, Result, TranslationRequest};
+use crate::{Error, GenerationConfig, Model, Provider, Result, TranslationRequest};
 
 const URL: &str = "https://api.deepseek.com/chat/completions";
+const JSON_EXAMPLE: &str = concat!(
+    " Example JSON output: ",
+    r#"{"translations":[{"id":0,"text":"translated text"}]}"#,
+    "."
+);
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(default)]
@@ -46,5 +51,45 @@ pub(super) async fn translate(
     } else {
         "disabled"
     });
-    super::openai_compatible::translate(client, backend, request).await
+    backend.system_prompt_suffix = Some(JSON_EXAMPLE);
+    match super::openai_compatible::translate(client, backend.clone(), request).await {
+        Err(error) if retry_invalid_json(&error) => {
+            tracing::warn!(model, "retrying DeepSeek translation after invalid JSON");
+            if generation.temperature.is_none() {
+                backend.temperature = Some(0.2);
+            }
+            super::openai_compatible::translate(client, backend, request).await
+        }
+        result => result,
+    }
+}
+
+fn retry_invalid_json(error: &Error) -> bool {
+    matches!(error, Error::InvalidTranslationJson { .. })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supplies_the_json_shape_required_by_deepseek_json_mode() {
+        let example = JSON_EXAMPLE
+            .split_once(':')
+            .map(|(_, json)| json.trim().trim_end_matches('.'))
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(example).unwrap();
+        assert!(value["translations"].is_array());
+    }
+
+    #[test]
+    fn retries_only_invalid_translation_json() {
+        assert!(retry_invalid_json(&Error::InvalidTranslationJson {
+            provider: "deepseek",
+            source: anyhow::anyhow!("missing field `translations`"),
+        }));
+        assert!(!retry_invalid_json(&Error::QuotaExceeded {
+            provider: "deepseek",
+        }));
+    }
 }

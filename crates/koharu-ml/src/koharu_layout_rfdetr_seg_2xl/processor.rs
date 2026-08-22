@@ -3,6 +3,8 @@
 //! https://github.com/roboflow/rf-detr/blob/e77de6698d69d09cd9abf2597e2e9a576169a119/src/rfdetr/detr.py#L1177-L1430
 //! https://github.com/roboflow/rf-detr/blob/e77de6698d69d09cd9abf2597e2e9a576169a119/src/rfdetr/models/postprocess.py
 
+use std::borrow::Cow;
+
 use anyhow::{Result, ensure};
 use image::DynamicImage;
 use koharu_torch::{Device, IndexOp, Kind, Tensor};
@@ -41,12 +43,30 @@ impl KoharuLayoutRFDetrImageProcessor {
         self.recommended_thresholds
     }
 
-    pub(super) fn preprocess(&self, image: &DynamicImage, device: Device) -> Result<Tensor> {
+    pub(super) fn normalization(&self, device: Device) -> (Tensor, Tensor) {
+        let mean = Tensor::from_slice(&[0.485f32, 0.456, 0.406])
+            .view([1, 3, 1, 1])
+            .to_device(device);
+        let std = Tensor::from_slice(&[0.229f32, 0.224, 0.225])
+            .view([1, 3, 1, 1])
+            .to_device(device);
+        (mean, std)
+    }
+
+    pub(super) fn preprocess(
+        &self,
+        image: &DynamicImage,
+        device: Device,
+        mean: &Tensor,
+        std: &Tensor,
+    ) -> Result<Tensor> {
         ensure!(
             image.width() > 0 && image.height() > 0,
             "cannot segment an empty image"
         );
-        let image = image.to_rgb8();
+        let image = image
+            .as_rgb8()
+            .map_or_else(|| Cow::Owned(image.to_rgb8()), Cow::Borrowed);
         let mut pixel_values = Tensor::from_slice(image.as_raw())
             .view([1, i64::from(image.height()), i64::from(image.width()), 3])
             .permute([0, 3, 1, 2])
@@ -63,12 +83,6 @@ impl KoharuLayoutRFDetrImageProcessor {
                 None,
             );
         }
-        let mean = Tensor::from_slice(&[0.485f32, 0.456, 0.406])
-            .view([1, 3, 1, 1])
-            .to_device(device);
-        let std = Tensor::from_slice(&[0.229f32, 0.224, 0.225])
-            .view([1, 3, 1, 1])
-            .to_device(device);
         Ok((pixel_values - mean) / std)
     }
 

@@ -5,5 +5,7 @@ mod batch;
 mod commands;
 
 pub use app::run;
-pub use batch::{BatchFailure, BatchOptions, BatchReport, run_batch};
+pub use batch::{
+    BatchFailure, BatchOptions, BatchReport, DEFAULT_REMOTE_TRANSLATION_CONCURRENCY, run_batch,
+};
 pub use commands::bindings;

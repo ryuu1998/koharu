@@ -44,6 +44,7 @@ describe('batch processing workspace', () => {
 
     expect(screen.getByText('C:\\Manga Project')).toBeInTheDocument()
     expect(screen.getByText('D:\\Translated Manga')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Remote requests' })).toHaveValue('4')
     expect(screen.getByRole('checkbox', { name: 'Chapter 001.cbz' })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -55,6 +56,11 @@ describe('batch processing workspace', () => {
       source.chapters[0].path,
       source.chapters[1].path,
     ])
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Remote requests' }), {
+      target: { value: '6' },
+    })
+    expect(useKoharuStore.getState().batch.translationConcurrency).toBe(6)
   })
 
   it('reports active-page and whole-batch progress independently', () => {
@@ -86,6 +92,19 @@ describe('batch processing workspace', () => {
     expect(screen.getByText('3 of 12 pages')).toBeInTheDocument()
     expect(screen.getByText('1 of 2 chapters · 63%')).toBeInTheDocument()
     expect(screen.getByText('Current stage: Translation')).toBeInTheDocument()
+
+    act(() =>
+      useKoharuStore.getState().updateBatch({
+        event: {
+          event: 'chapter_exporting',
+          index: 1,
+          output: 'D:\\Translated Manga\\Chapter 002.cbz',
+        },
+      }),
+    )
+
+    expect(screen.getByText('Exporting chapter as CBZ…')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2 chapters · 100%')).toBeInTheDocument()
 
     act(() =>
       useKoharuStore.getState().updateBatch({

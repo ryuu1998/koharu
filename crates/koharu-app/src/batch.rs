@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::VecDeque,
     fs,
     io::Read as _,
     path::{Path, PathBuf},
@@ -10,16 +10,18 @@ use std::{
 use anyhow::{Context as _, Result, bail};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use futures::future::try_join_all;
 use koharu_desktop::Desktop;
 use koharu_pipeline::{
-    Committer, Operation, Pipeline, Progress, Request, RunStatus, Scope, Stage, StageOutput,
-    StopToken,
+    Committer, Operation, Pipeline, PipelineConfig, Progress, ProgressSink, Request, RunStatus,
+    Scope, Stage, StageOutput, StopToken,
 };
 use koharu_rasterizer::Rasterizer;
 use koharu_renderer::Renderer;
 use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, EntityId, PageDraft, Session, Snapshot,
 };
+use koharu_translator::Provider;
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use serde::Serialize;
@@ -31,6 +33,8 @@ use crate::commands::{Error, lifecycle::load_archive, output};
 const COMIC_INFO_LIMIT: u64 = 2 * 1024 * 1024;
 const THUMBNAIL_ENTRY_LIMIT: u64 = 512 * 1024 * 1024;
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
+pub const DEFAULT_REMOTE_TRANSLATION_CONCURRENCY: u8 = 4;
+const MAX_REMOTE_TRANSLATION_CONCURRENCY: u8 = 8;
 
 type EventSink = Arc<dyn Fn(BatchEvent) + Send + Sync>;
 
@@ -39,6 +43,7 @@ pub struct BatchOptions {
     pub input: PathBuf,
     pub output: Option<PathBuf>,
     pub jpeg_quality: u8,
+    pub translation_concurrency: u8,
     pub overwrite: bool,
     pub cpu: bool,
 }
@@ -107,6 +112,11 @@ pub enum BatchEvent {
         total_steps: usize,
         stage: Option<Stage>,
     },
+    ChapterExporting {
+        #[specta(type = f64)]
+        index: usize,
+        output: PathBuf,
+    },
     ChapterFinished {
         #[specta(type = f64)]
         index: usize,
@@ -137,6 +147,7 @@ pub enum BatchEvent {
 #[derive(Default)]
 pub(crate) struct BatchState {
     stop: Mutex<Option<StopToken>>,
+    translation_lanes: Mutex<Vec<Pipeline>>,
 }
 
 struct BatchGuard<'a>(&'a BatchState);
@@ -157,6 +168,18 @@ impl BatchState {
             stop.stop();
         }
     }
+
+    fn translation_lanes(&self, concurrency: u8) -> Result<Vec<Pipeline>> {
+        validate_translation_concurrency(concurrency)?;
+        if !remote_translation_selected()? {
+            return Ok(Vec::new());
+        }
+        let mut lanes = self.translation_lanes.lock();
+        while lanes.len() < usize::from(concurrency) {
+            lanes.push(create_translation_lane()?);
+        }
+        Ok(lanes[..usize::from(concurrency)].to_vec())
+    }
 }
 
 impl Drop for BatchGuard<'_> {
@@ -167,16 +190,19 @@ impl Drop for BatchGuard<'_> {
 
 struct BatchRuntime {
     pipeline: Pipeline,
+    translation_lanes: Vec<Pipeline>,
     renderer: Renderer,
     rasterizer: Arc<Rasterizer>,
 }
 
-struct SessionCommitter<'a>(&'a mut Session);
+struct SessionCommitter(Arc<tokio::sync::Mutex<Session>>);
 
 #[async_trait]
-impl Committer for SessionCommitter<'_> {
+impl Committer for SessionCommitter {
     async fn commit(&mut self, output: StageOutput) -> Result<Snapshot> {
-        Ok(self.0.commit(output.patch).await?.snapshot)
+        let mut session = self.0.lock().await;
+        let patch = output.patch.rebase_on(&session.snapshot())?;
+        Ok(session.commit(patch).await?.snapshot)
     }
 }
 
@@ -219,6 +245,7 @@ pub(crate) async fn process_batch(
     output: PathBuf,
     jpeg_quality: u8,
     overwrite: bool,
+    translation_concurrency: u8,
     on_event: Channel<BatchEvent>,
     pipeline: State<'_, Pipeline>,
     desktop: State<'_, Desktop>,
@@ -227,12 +254,14 @@ pub(crate) async fn process_batch(
     if chapters.is_empty() {
         return Err(anyhow::anyhow!("select at least one chapter").into());
     }
+    validate_translation_concurrency(translation_concurrency)?;
     let (_guard, stop) = batch.begin()?;
     let sink: EventSink = Arc::new(move |event| {
         let _ = on_event.send(event);
     });
     let runtime = BatchRuntime {
         pipeline: pipeline.inner().clone(),
+        translation_lanes: batch.translation_lanes(translation_concurrency)?,
         renderer: desktop.renderer(),
         rasterizer: desktop.rasterizer().await?,
     };
@@ -267,6 +296,11 @@ pub async fn run_batch(options: BatchOptions) -> Result<BatchReport> {
         .context("failed to initialize Koharu's model runtime")?;
     let runtime = BatchRuntime {
         pipeline: Pipeline::load(koharu_ml::device(options.cpu))?,
+        translation_lanes: if remote_translation_selected()? {
+            create_translation_lanes(options.translation_concurrency)?
+        } else {
+            Vec::new()
+        },
         renderer: Renderer::new()?,
         rasterizer: Arc::new(Rasterizer::new()?),
     };
@@ -280,6 +314,23 @@ pub async fn run_batch(options: BatchOptions) -> Result<BatchReport> {
         None,
     )
     .await
+}
+
+fn remote_translation_selected() -> Result<bool> {
+    let config = PipelineConfig::load()?;
+    let remote = config.read()?.translation.model.provider != Provider::Local;
+    Ok(remote)
+}
+
+fn create_translation_lane() -> Result<Pipeline> {
+    Pipeline::load(koharu_ml::device(true))
+}
+
+fn create_translation_lanes(concurrency: u8) -> Result<Vec<Pipeline>> {
+    validate_translation_concurrency(concurrency)?;
+    (0..concurrency)
+        .map(|_| create_translation_lane())
+        .collect()
 }
 
 async fn run_chapters(
@@ -450,29 +501,24 @@ async fn process_chapter(
         Ok(())
     })?;
     session.commit(patch).await?;
+    let session = Arc::new(tokio::sync::Mutex::new(session));
+    let page_ids = session
+        .lock()
+        .await
+        .snapshot()
+        .pages()
+        .map(|page| page.id())
+        .collect::<Vec<_>>();
 
-    let progress = Arc::new(Mutex::new(ChapterProgress::default()));
+    let progress = Arc::new(Mutex::new(ChapterProgress::new(
+        page_count,
+        Stage::ALL.len(),
+    )));
+    let progress_state = Arc::clone(&progress);
     let progress_events = events.clone();
     let progress_callback = Arc::new(move |event| {
-        let mut progress = progress.lock();
-        let stage = match event {
-            Progress::Started { pages, stages } => {
-                progress.total_pages = pages.len();
-                progress.stages_per_page = stages.len();
-                progress.total_steps = pages.len().saturating_mul(stages.len());
-                None
-            }
-            Progress::Loading { stage, .. } | Progress::Running { stage, .. } => Some(stage),
-            Progress::Finished { page, stage, .. } | Progress::Skipped { page, stage } => {
-                progress.completed_steps = progress.completed_steps.saturating_add(1);
-                let page_steps = progress.page_steps.entry(page).or_default();
-                *page_steps = page_steps.saturating_add(1);
-                if *page_steps == progress.stages_per_page {
-                    progress.completed_pages = progress.completed_pages.saturating_add(1);
-                }
-                Some(stage)
-            }
-        };
+        let mut progress = progress_state.lock();
+        let stage = progress.record(event);
         emit(
             &progress_events,
             BatchEvent::ChapterProgress {
@@ -485,32 +531,66 @@ async fn process_chapter(
             },
         );
     });
-    let snapshot = session.snapshot();
-    let mut committer = SessionCommitter(&mut session);
-    let pipeline_report = runtime
-        .pipeline
-        .execute(
-            snapshot,
-            Request {
-                operation: Operation::Full,
-                scope: Scope::Project,
-                stop,
-                progress: Some(progress_callback),
-                ..Request::default()
-            },
-            &mut committer,
-        )
-        .await?;
-    if pipeline_report.status != RunStatus::Completed {
-        bail!("translation stopped before all {page_count} pages completed");
+    for stage in Stage::ALL {
+        let stage_started = Instant::now();
+        {
+            let mut progress = progress.lock();
+            progress.start_stage(page_count);
+            emit(
+                &events,
+                BatchEvent::ChapterProgress {
+                    index,
+                    completed_pages: progress.completed_pages,
+                    total_pages: progress.total_pages,
+                    completed_steps: progress.completed_steps,
+                    total_steps: progress.total_steps,
+                    stage: Some(stage),
+                },
+            );
+        }
+        if stage == Stage::Translation && !runtime.translation_lanes.is_empty() {
+            execute_remote_translation(
+                runtime,
+                Arc::clone(&session),
+                &page_ids,
+                stop.clone(),
+                progress_callback.clone(),
+            )
+            .await?;
+        } else {
+            execute_project_stage(
+                &runtime.pipeline,
+                Arc::clone(&session),
+                stage,
+                stop.clone(),
+                progress_callback.clone(),
+                page_count,
+            )
+            .await?;
+        }
+        tracing::info!(
+            chapter = %chapter.display(),
+            %stage,
+            pages = page_count,
+            remote_requests = runtime.translation_lanes.len(),
+            elapsed_seconds = stage_started.elapsed().as_secs_f64(),
+            "batch chapter stage finished"
+        );
     }
 
+    emit(
+        &events,
+        BatchEvent::ChapterExporting {
+            index,
+            output: output_path.to_owned(),
+        },
+    );
     let metadata_path = chapter.to_owned();
     let comic_info = tokio::task::spawn_blocking(move || read_comic_info(&metadata_path))
         .await
         .context("ComicInfo reader stopped unexpectedly")??;
     output::export_snapshot_cbz(
-        session.snapshot(),
+        session.lock().await.snapshot(),
         runtime.renderer.clone(),
         Arc::clone(&runtime.rasterizer),
         output_path.to_owned(),
@@ -521,14 +601,127 @@ async fn process_chapter(
     Ok(started.elapsed())
 }
 
-#[derive(Default)]
+async fn execute_project_stage(
+    pipeline: &Pipeline,
+    session: Arc<tokio::sync::Mutex<Session>>,
+    stage: Stage,
+    stop: StopToken,
+    progress: ProgressSink,
+    page_count: usize,
+) -> Result<()> {
+    let snapshot = session.lock().await.snapshot();
+    let mut committer = SessionCommitter(session);
+    let report = pipeline
+        .execute(
+            snapshot,
+            Request {
+                operation: Operation::Only { stage },
+                scope: Scope::Project,
+                stop,
+                progress: Some(progress),
+                ..Request::default()
+            },
+            &mut committer,
+        )
+        .await?;
+    if report.status != RunStatus::Completed {
+        bail!("translation stopped during {stage} before all {page_count} pages completed");
+    }
+    Ok(())
+}
+
+async fn execute_remote_translation(
+    runtime: &BatchRuntime,
+    session: Arc<tokio::sync::Mutex<Session>>,
+    pages: &[EntityId],
+    stop: StopToken,
+    progress: ProgressSink,
+) -> Result<()> {
+    let queue = Arc::new(tokio::sync::Mutex::new(
+        pages.iter().copied().enumerate().collect::<VecDeque<_>>(),
+    ));
+    let workers = runtime.translation_lanes.iter().map(|pipeline| {
+        let queue = Arc::clone(&queue);
+        let session = Arc::clone(&session);
+        let stop = stop.clone();
+        let progress = progress.clone();
+        async move {
+            loop {
+                let Some((page_index, page)) = queue.lock().await.pop_front() else {
+                    break;
+                };
+                let snapshot = session.lock().await.snapshot();
+                let mut committer = SessionCommitter(Arc::clone(&session));
+                let report = pipeline
+                    .execute(
+                        snapshot,
+                        Request {
+                            operation: Operation::Only {
+                                stage: Stage::Translation,
+                            },
+                            scope: Scope::Pages(vec![page]),
+                            stop: stop.clone(),
+                            progress: Some(progress.clone()),
+                            ..Request::default()
+                        },
+                        &mut committer,
+                    )
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "remote translation failed on page {} of {}",
+                            page_index + 1,
+                            pages.len()
+                        )
+                    })?;
+                if report.status != RunStatus::Completed {
+                    bail!(
+                        "remote translation stopped on page {} of {}",
+                        page_index + 1,
+                        pages.len()
+                    );
+                }
+            }
+            Ok::<_, anyhow::Error>(())
+        }
+    });
+    try_join_all(workers).await?;
+    Ok(())
+}
+
 struct ChapterProgress {
-    page_steps: HashMap<EntityId, usize>,
     completed_pages: usize,
     total_pages: usize,
     completed_steps: usize,
     total_steps: usize,
-    stages_per_page: usize,
+}
+
+impl ChapterProgress {
+    fn new(total_pages: usize, stages_per_page: usize) -> Self {
+        Self {
+            completed_pages: 0,
+            total_pages,
+            completed_steps: 0,
+            total_steps: total_pages.saturating_mul(stages_per_page),
+        }
+    }
+
+    fn start_stage(&mut self, total_pages: usize) {
+        self.completed_pages = 0;
+        self.total_pages = total_pages;
+    }
+
+    fn record(&mut self, event: Progress) -> Option<Stage> {
+        match event {
+            Progress::Started { stages, .. } => stages.first().copied(),
+            Progress::Loading { stage, .. } | Progress::Running { stage, .. } => Some(stage),
+            Progress::Finished { stage, .. } | Progress::Skipped { stage, .. } => {
+                self.completed_steps = self.completed_steps.saturating_add(1);
+                self.completed_pages = self.completed_pages.saturating_add(1);
+                Some(stage)
+            }
+        }
+    }
 }
 
 fn emit(events: &Option<EventSink>, event: BatchEvent) {
@@ -620,7 +813,18 @@ fn validate_options(options: &BatchOptions) -> Result<()> {
     if !options.input.exists() {
         bail!("input path does not exist: {}", options.input.display());
     }
+    validate_translation_concurrency(options.translation_concurrency)?;
     validate_chapters(&discover_chapters(&options.input)?, options.jpeg_quality)
+}
+
+fn validate_translation_concurrency(concurrency: u8) -> Result<()> {
+    if !(1..=MAX_REMOTE_TRANSLATION_CONCURRENCY).contains(&concurrency) {
+        bail!(
+            "remote translation concurrency must be between 1 and {}",
+            MAX_REMOTE_TRANSLATION_CONCURRENCY
+        );
+    }
+    Ok(())
 }
 
 fn validate_chapters(chapters: &[PathBuf], jpeg_quality: u8) -> Result<()> {
@@ -740,6 +944,7 @@ mod tests {
     use std::io::{Cursor, Write as _};
 
     use image::{DynamicImage, ImageFormat, RgbaImage};
+    use koharu_scene::EntityId;
     use zip::{ZipWriter, write::SimpleFileOptions};
 
     use super::*;
@@ -800,6 +1005,86 @@ mod tests {
         assert_eq!(
             default_output_directory(input),
             Path::new("Manga/Translated")
+        );
+    }
+
+    #[test]
+    fn bounds_remote_translation_concurrency() {
+        assert!(validate_translation_concurrency(1).is_ok());
+        assert!(validate_translation_concurrency(4).is_ok());
+        assert!(validate_translation_concurrency(8).is_ok());
+        assert!(validate_translation_concurrency(0).is_err());
+        assert!(validate_translation_concurrency(9).is_err());
+    }
+
+    #[test]
+    fn keeps_chapter_progress_across_stage_passes() {
+        let page = EntityId::new();
+        let mut progress = ChapterProgress::new(1, 2);
+
+        for stage in [Stage::Detection, Stage::Ocr] {
+            progress.start_stage(1);
+            progress.record(Progress::Started {
+                pages: vec![page],
+                stages: vec![stage],
+            });
+            assert_eq!(progress.completed_pages, 0);
+            progress.record(Progress::Skipped { page, stage });
+            assert_eq!(progress.completed_pages, 1);
+        }
+
+        assert_eq!(progress.completed_steps, 2);
+        assert_eq!(progress.total_steps, 2);
+    }
+
+    #[tokio::test]
+    async fn shared_committer_rebases_disjoint_page_results() {
+        let mut session = Session::memory().await.unwrap();
+        let mut pages = Vec::new();
+        let patch = session
+            .snapshot()
+            .patch(|edit| {
+                pages.push(edit.add_page(PageDraft::new("one", 10.0, 10.0), At::End)?);
+                pages.push(edit.add_page(PageDraft::new("two", 10.0, 10.0), At::End)?);
+                Ok(())
+            })
+            .unwrap();
+        session.commit(patch).await.unwrap();
+        let base = session.snapshot();
+        let patches = pages
+            .iter()
+            .enumerate()
+            .map(|(index, page)| {
+                base.patch(|edit| {
+                    edit.set_page(
+                        *page,
+                        PageDraft::new(format!("translated {}", index + 1), 10.0, 10.0),
+                    )
+                })
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let session = Arc::new(tokio::sync::Mutex::new(session));
+
+        for (page, patch) in pages.iter().zip(patches) {
+            SessionCommitter(Arc::clone(&session))
+                .commit(StageOutput {
+                    page: *page,
+                    stage: Stage::Translation,
+                    patch,
+                })
+                .await
+                .unwrap();
+        }
+
+        let snapshot = session.lock().await.snapshot();
+        assert_eq!(
+            snapshot.page(pages[0]).unwrap().page().unwrap().label,
+            "translated 1"
+        );
+        assert_eq!(
+            snapshot.page(pages[1]).unwrap().page().unwrap().label,
+            "translated 2"
         );
     }
 

@@ -18,10 +18,11 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { call } from '@/lib/backend'
-import { useKoharuStore, type BatchChapterStatus } from '@/lib/store'
+import { receiveError, useKoharuStore, type BatchChapterStatus } from '@/lib/store'
 import { commands, type BatchChapter, type BatchEvent } from '@koharu/bridge/protocol'
 import { Badge } from '@koharu/ui/components/badge'
 import { Button } from '@koharu/ui/components/button'
+import { NativeSelect, NativeSelectOption } from '@koharu/ui/components/native-select'
 import { Progress, ProgressLabel } from '@koharu/ui/components/progress'
 import { ScrollArea } from '@koharu/ui/components/scroll-area'
 import { cn } from '@koharu/ui/lib/utils'
@@ -43,15 +44,20 @@ export function BatchPage() {
   const currentPercent =
     current?.event === 'chapter_progress'
       ? percentage(current.completed_steps, current.total_steps)
-      : current?.event === 'chapter_finished' || current?.event === 'chapter_skipped'
+      : current?.event === 'chapter_exporting'
         ? 100
-        : 0
+        : current?.event === 'chapter_finished' || current?.event === 'chapter_skipped'
+          ? 100
+          : 0
   const settled = batch.selected.filter((path) => {
     const status = batch.statuses[path]
     return status === 'completed' || status === 'skipped' || status === 'failed'
   }).length
   const activeFraction =
-    batch.running && current?.event === 'chapter_progress' ? currentPercent / 100 : 0
+    batch.running &&
+    (current?.event === 'chapter_progress' || current?.event === 'chapter_exporting')
+      ? currentPercent / 100
+      : 0
   const overallPercent =
     batch.event?.event === 'finished' && !batch.event.stopped
       ? 100
@@ -106,7 +112,15 @@ export function BatchPage() {
     const channel = new Channel<BatchEvent>()
     channel.onmessage = (event) => receiveBatchEvent(event, paths)
     try {
-      const report = await call(commands.processBatch, paths, batch.output, 95, false, channel)
+      const report = await call(
+        commands.processBatch,
+        paths,
+        batch.output,
+        95,
+        false,
+        batch.translationConcurrency,
+        channel,
+      )
       updateBatch({ report })
     } finally {
       updateBatch({ running: false })
@@ -165,6 +179,33 @@ export function BatchPage() {
           </div>
         )}
         <div className='mt-auto rounded-xl border border-border/70 bg-foreground/[0.025] p-3'>
+          <label
+            htmlFor='batch-translation-concurrency'
+            className='text-[10px] font-semibold tracking-[0.1em] text-muted-foreground uppercase'
+          >
+            {t('batch.remoteConcurrency')}
+          </label>
+          <NativeSelect
+            id='batch-translation-concurrency'
+            className='mt-2 w-full text-[11px]'
+            size='sm'
+            value={String(batch.translationConcurrency)}
+            disabled={batch.running}
+            onChange={(event) =>
+              updateBatch({ translationConcurrency: Number(event.currentTarget.value) })
+            }
+          >
+            {[1, 2, 4, 6, 8].map((concurrency) => (
+              <NativeSelectOption key={concurrency} value={concurrency}>
+                {concurrency}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <p className='mt-2 text-[10px] leading-4 text-muted-foreground'>
+            {t('batch.remoteConcurrencyHint')}
+          </p>
+        </div>
+        <div className='mt-3 rounded-xl border border-border/70 bg-foreground/[0.025] p-3'>
           <p className='text-[10px] font-semibold tracking-[0.1em] text-muted-foreground uppercase'>
             {t('batch.exportMode')}
           </p>
@@ -233,7 +274,7 @@ export function BatchPage() {
           <EmptyBatch onChoose={chooseSource} loading={loadingSource} />
         ) : (
           <ScrollArea className='min-h-0 flex-1'>
-            <div className={cn('p-7', (batch.running || batch.report) && 'pb-48')}>
+            <div className={cn('p-7', (batch.running || batch.report) && 'pb-56')}>
               <div className='grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4'>
                 {batch.source.chapters.map((chapter) => (
                   <ChapterCard
@@ -279,20 +320,22 @@ export function BatchPage() {
             </div>
             <div className='mt-3 flex items-center justify-between gap-4 border-t border-border/60 pt-3'>
               <p className='truncate text-[10px] text-muted-foreground'>
-                {batch.event?.event === 'chapter_progress' && batch.event.stage
-                  ? t('batch.runningStage', { stage: t(`phase.${batch.event.stage}`) })
-                  : batch.report?.stopped
-                    ? t('batch.stoppedSummary', {
-                        completed: batch.report.completed,
-                        total: batch.selected.length,
-                      })
-                    : batch.report
-                      ? t('batch.summary', {
+                {batch.event?.event === 'chapter_exporting'
+                  ? t('batch.exportingChapter')
+                  : batch.event?.event === 'chapter_progress' && batch.event.stage
+                    ? t('batch.runningStage', { stage: t(`phase.${batch.event.stage}`) })
+                    : batch.report?.stopped
+                      ? t('batch.stoppedSummary', {
                           completed: batch.report.completed,
-                          skipped: batch.report.skipped,
-                          failed: batch.report.failures.length,
+                          total: batch.selected.length,
                         })
-                      : t('batch.usingSavedSettings')}
+                      : batch.report
+                        ? t('batch.summary', {
+                            completed: batch.report.completed,
+                            skipped: batch.report.skipped,
+                            failed: batch.report.failures.length,
+                          })
+                        : t('batch.usingSavedSettings')}
               </p>
               {batch.running && (
                 <Button
@@ -306,6 +349,15 @@ export function BatchPage() {
                 </Button>
               )}
             </div>
+            {batch.report && batch.report.failures.length > 0 && (
+              <div className='mt-3 max-h-20 space-y-1 overflow-y-auto border-t border-destructive/20 pt-3 text-[10px] text-destructive'>
+                {batch.report.failures.map((failure) => (
+                  <p key={failure.chapter} className='break-words' title={failure.error}>
+                    {failure.chapter}: {failure.error}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -449,7 +501,11 @@ function receiveBatchEvent(event: BatchEvent, selected: string[]) {
   if ('index' in event) {
     const path = selected[event.index]
     if (path) {
-      if (event.event === 'chapter_started' || event.event === 'chapter_progress') {
+      if (
+        event.event === 'chapter_started' ||
+        event.event === 'chapter_progress' ||
+        event.event === 'chapter_exporting'
+      ) {
         statuses[path] = 'running'
       } else if (event.event === 'chapter_finished') {
         statuses[path] = 'completed'
@@ -457,6 +513,7 @@ function receiveBatchEvent(event: BatchEvent, selected: string[]) {
         statuses[path] = 'skipped'
       } else if (event.event === 'chapter_failed') {
         statuses[path] = 'failed'
+        receiveError(`${event.name}: ${event.error}`)
       }
     }
   }

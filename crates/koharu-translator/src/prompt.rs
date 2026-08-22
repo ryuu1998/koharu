@@ -2,7 +2,7 @@ use anyhow::Context;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::{Value, json};
 
-use crate::{Language, TranslationContext, TranslationRequest};
+use crate::{Error, Language, TranslationContext, TranslationRequest};
 
 pub(crate) fn prompts(request: &TranslationRequest) -> anyhow::Result<(String, String)> {
     let input = TranslationInput {
@@ -21,12 +21,12 @@ pub(crate) fn prompts(request: &TranslationRequest) -> anyhow::Result<(String, S
 }
 
 pub(crate) fn translations(
-    provider: &str,
+    provider: &'static str,
     text: &str,
     source_segments: &[String],
-) -> anyhow::Result<Vec<String>> {
+) -> crate::Result<Vec<String>> {
     let output = crate::json::from_str::<TranslationOutput>(text)
-        .with_context(|| format!("{provider} returned invalid translation JSON"))?;
+        .map_err(|source| Error::InvalidTranslationJson { provider, source })?;
     let mut translations = source_segments.to_vec();
     let mut translated = vec![false; source_segments.len()];
 
@@ -189,6 +189,18 @@ mod tests {
         ] {
             assert_eq!(translations("test", response, &source).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn classifies_a_missing_translations_field_for_provider_recovery() {
+        let error = translations("deepseek", r#"{"result": []}"#, &["one".to_owned()]).unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidTranslationJson {
+                provider: "deepseek",
+                ..
+            }
+        ));
     }
 
     #[test]

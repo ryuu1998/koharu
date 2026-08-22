@@ -62,7 +62,10 @@ pub(super) async fn translate(
     backend: ChatBackend<'_>,
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
-    let (system, user) = prompt::prompts(request)?;
+    let (mut system, user) = prompt::prompts(request)?;
+    if let Some(suffix) = backend.system_prompt_suffix {
+        system.push_str(suffix);
+    }
     let user_content = match request.image.as_deref() {
         Some(image) => MessageContent::Parts(vec![
             ContentPart::Text { text: user },
@@ -118,6 +121,7 @@ pub(super) async fn translate(
     )?)
 }
 
+#[derive(Clone)]
 pub(super) struct ChatBackend<'a> {
     pub(super) provider: &'static str,
     pub(super) endpoint: &'a str,
@@ -133,6 +137,7 @@ pub(super) struct ChatBackend<'a> {
     pub(super) reasoning: Option<bool>,
     pub(super) thinking: Option<&'static str>,
     pub(super) response_mode: ResponseMode,
+    pub(super) system_prompt_suffix: Option<&'static str>,
 }
 
 impl<'a> ChatBackend<'a> {
@@ -159,6 +164,7 @@ impl<'a> ChatBackend<'a> {
             reasoning: None,
             thinking: None,
             response_mode,
+            system_prompt_suffix: None,
         }
     }
 }

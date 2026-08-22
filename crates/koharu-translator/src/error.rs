@@ -22,6 +22,12 @@ pub enum Error {
         expected: usize,
         actual: usize,
     },
+    #[error("{provider} returned invalid translation JSON: {source:#}")]
+    InvalidTranslationJson {
+        provider: &'static str,
+        #[source]
+        source: anyhow::Error,
+    },
     #[error("{provider} quota or rate limit was exceeded")]
     QuotaExceeded { provider: &'static str },
     #[error("{provider} API request failed with HTTP {status}: {message}")]
