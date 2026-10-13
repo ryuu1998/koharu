@@ -215,10 +215,10 @@ fn inspect(path: &Path) -> Result<(usize, String)> {
     let image = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()?
         .decode()?
-        .thumbnail(96, 128)
+        .thumbnail(576, 768)
         .to_rgba8();
     let thumbnail =
-        webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height()).encode(75.0);
+        webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height()).encode(88.0);
     Ok((
         images.len(),
         format!("data:image/webp;base64,{}", STANDARD.encode(&*thumbnail)),
@@ -284,7 +284,7 @@ mod tests {
         let path = directory.path().join("chapter2.cbz");
         let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
         let mut bytes = Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgba8(image::RgbaImage::new(2, 3))
+        image::DynamicImage::ImageRgba8(image::RgbaImage::new(1200, 1600))
             .write_to(&mut bytes, image::ImageFormat::Png)
             .unwrap();
         let options = zip::write::SimpleFileOptions::default();
@@ -309,5 +309,11 @@ mod tests {
                 .starts_with("data:image/webp;base64,")
         );
         assert!(source.chapters[1].error.is_some());
+        let cover = source.chapters[0].thumbnail.as_ref().unwrap();
+        let bytes = STANDARD
+            .decode(cover.strip_prefix("data:image/webp;base64,").unwrap())
+            .unwrap();
+        let image = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((image.width(), image.height()), (576, 768));
     }
 }
