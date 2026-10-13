@@ -244,7 +244,7 @@ function render(ui: ReactNode) {
 }
 
 function SettingsNavigationHarness() {
-  const settingsOpen = useKoharuStore((state) => state.settingsOpen)
+  const settingsOpen = useKoharuStore((state) => state.workspace === 'settings')
   return settingsOpen ? <SettingsPage /> : <CanvasCommandBar />
 }
 
@@ -1086,7 +1086,7 @@ describe('greenfield editor', () => {
     expect(screen.getByRole('button', { name: /Stages 4 stages/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Output English/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(useKoharuStore.getState().settingsOpen).toBe(true)
+    expect(useKoharuStore.getState().workspace === 'settings').toBe(true)
   })
 
   it('configures translation output from the runtime selector', async () => {
@@ -1174,7 +1174,7 @@ describe('greenfield editor', () => {
     await user.click(screen.getByRole('combobox', { name: 'Target language' }))
     await user.click(await screen.findByRole('option', { name: 'Japanese' }))
 
-    act(() => useKoharuStore.getState().setSettingsOpen(true))
+    act(() => useKoharuStore.getState().setWorkspace('settings'))
     await waitFor(() => expect(save).toHaveBeenCalled())
     await user.click(screen.getByRole('button', { name: 'Back to editor' }))
     await user.click(screen.getByRole('button', { name: 'Processing settings' }))
@@ -1345,7 +1345,7 @@ describe('greenfield editor', () => {
   it('edits and persists pipeline and translation preferences from the settings page', async () => {
     installProject()
     const user = userEvent.setup()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(preferences)
     render(
       <ThemeProvider attribute='class'>
@@ -1457,7 +1457,7 @@ describe('greenfield editor', () => {
       },
     }
     useKoharuStore.setState({
-      settingsOpen: true,
+      workspace: 'settings',
       preferences: configured,
       translationModels: [
         {
@@ -1544,7 +1544,7 @@ describe('greenfield editor', () => {
   it('preserves a credential draft and focus when autosave finishes', async () => {
     installProject()
     const user = userEvent.setup()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     const save = vi
       .spyOn(commands, 'savePreferences')
       .mockImplementation(async (pipeline, providers, typesetting) => ({
@@ -1580,7 +1580,7 @@ describe('greenfield editor', () => {
 
   it('clamps a threshold typed past its bounds before saving it', async () => {
     installProject()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(preferences)
     render(
       <ThemeProvider attribute='class'>
@@ -1622,7 +1622,7 @@ describe('greenfield editor', () => {
       },
     }
     useKoharuStore.setState({
-      settingsOpen: true,
+      workspace: 'settings',
       preferences: configured,
       translationModels: [
         ...useKoharuStore.getState().translationModels,
@@ -1673,7 +1673,7 @@ describe('greenfield editor', () => {
     })
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
     await waitFor(() => {
-      expect(useKoharuStore.getState().settingsOpen).toBe(false)
+      expect(useKoharuStore.getState().workspace === 'settings').toBe(false)
       expect(useKoharuStore.getState().preferences?.pipeline.translation.model).toMatchObject({
         provider: 'openrouter',
         model: 'openrouter/auto',
@@ -1684,7 +1684,7 @@ describe('greenfield editor', () => {
   it('adds and removes default font families from typesetting settings', async () => {
     installProject()
     const user = userEvent.setup()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     queryClient.setQueryData(fontsKey, [
       {
         name: 'Noto Sans',

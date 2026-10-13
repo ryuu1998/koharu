@@ -537,5 +537,27 @@
     "maximize": "Развернуть",
     "minimize": "Свернуть",
     "restore": "Восстановить"
+  },
+  "batch": {
+    "tab": "Batch",
+    "title": "Batch translation",
+    "description": "Translate chapters with your saved settings.",
+    "folders": "Batch folders",
+    "source": "Source folder",
+    "output": "Export folder",
+    "chooseSource": "Choose source folder",
+    "chooseOutput": "Choose export folder",
+    "choose": "Choose",
+    "chapters": "Chapters",
+    "selected": "{{count}} selected of {{total}}",
+    "selectAll": "Select all",
+    "clear": "Clear",
+    "emptyTitle": "Choose your chapters",
+    "emptyHint": "Select a folder containing CBZ chapters to see their covers and choose what to translate.",
+    "emptyFolder": "No CBZ chapters found",
+    "emptyFolderHint": "Choose another folder. Only CBZ files in this folder are included.",
+    "ready": "Ready",
+    "pages": "{{count}} pages",
+    "exportHint": "Exports keep chapter filenames, use quality-95 JPEG pages, and skip existing archives."
   }
 }

@@ -106,7 +106,7 @@ function RuntimeSelector({
   const [savingOutput, setSavingOutput] = useState(false)
   const preferences = useKoharuStore((state) => state.preferences)
   const translationModels = useKoharuStore((state) => state.translationModels)
-  const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const setWorkspace = useKoharuStore((state) => state.setWorkspace)
   const model = preferences?.pipeline.translation.model ?? null
   const translation = preferences?.pipeline.translation ?? null
   const providers = preferences?.providers.entries ?? []
@@ -246,7 +246,7 @@ function RuntimeSelector({
               className='h-8 justify-start gap-2 rounded-lg px-2 text-[11px] font-normal text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               onClick={() => {
                 setOpen(false)
-                setSettingsOpen(true)
+                setWorkspace('settings')
               }}
             >
               <Settings className='size-3.5' /> {t('menu.settings')}

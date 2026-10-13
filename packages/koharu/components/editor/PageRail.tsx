@@ -74,7 +74,7 @@ export function PageRail() {
   const selected = useKoharuStore((state) => state.selectedPages)
   const selectPages = useKoharuStore((state) => state.selectPages)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
-  const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const setWorkspace = useKoharuStore((state) => state.setWorkspace)
   const { importPages, importing } = useImportPages()
   const anchor = useRef<number | null>(null)
   const selectionRequest = useRef(0)
@@ -341,7 +341,7 @@ export function PageRail() {
                   size='icon'
                   className='size-8 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground'
                   aria-label={t('menu.settings')}
-                  onClick={() => setSettingsOpen(true)}
+                  onClick={() => setWorkspace('settings')}
                 />
               }
             >

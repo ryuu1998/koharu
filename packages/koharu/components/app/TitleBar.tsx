@@ -23,6 +23,7 @@ import {
 } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
 import { commands, type Operation, type Scope, type Stage } from '@koharu/bridge/protocol'
+import { Button } from '@koharu/ui/components/button'
 import {
   Menubar,
   MenubarContent as UiMenubarContent,
@@ -49,7 +50,8 @@ export function TitleBar() {
   const selectedPages = useKoharuStore((state) => state.selectedPages)
   const selectedLayers = useKoharuStore((state) => state.selectedLayers)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
-  const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const setWorkspace = useKoharuStore((state) => state.setWorkspace)
+  const workspace = useKoharuStore((state) => state.workspace)
   const requestCanvasFit = useKoharuStore((state) => state.requestCanvasFit)
   const { importPages, importing } = useImportPages()
   const { run: exportProject, busy: exporting } = useCommand(
@@ -151,7 +153,7 @@ export function TitleBar() {
                 {t('menu.closeProject')}
               </MenubarItem>
               <MenubarSeparator />
-              <MenubarItem onClick={() => setSettingsOpen(true)}>
+              <MenubarItem onClick={() => setWorkspace('settings')}>
                 <Settings />
                 {t('menu.settings')}
               </MenubarItem>
@@ -279,6 +281,17 @@ export function TitleBar() {
           </MenubarMenu>
         </Menubar>
 
+        <Button
+          type='button'
+          variant='ghost'
+          size='sm'
+          aria-pressed={workspace === 'batch'}
+          disabled={workspace === 'settings'}
+          className='relative z-10 ml-1 h-6 px-2 text-[11px] text-muted-foreground hover:bg-primary/10 aria-pressed:bg-primary/10 aria-pressed:text-foreground'
+          onClick={() => setWorkspace(workspace === 'batch' ? 'project' : 'batch')}
+        >
+          {t('batch.tab')}
+        </Button>
         <div className='min-w-0 flex-1' />
         <div className='pointer-events-none absolute inset-y-0 left-1/2 flex max-w-[40vw] min-w-16 -translate-x-1/2 items-center justify-center px-3 text-[11px] text-muted-foreground select-none'>
           {project ? (
