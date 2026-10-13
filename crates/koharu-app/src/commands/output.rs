@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use futures::future::try_join_all;
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use image::{
     ExtendedColorType, ImageEncoder as _,
     codecs::png::{CompressionType, FilterType, PngEncoder},
@@ -8,7 +8,6 @@ use koharu_psd::{PsdExportOptions, export_page};
 use koharu_rasterizer::{Raster, RasterOptions, Rasterizer};
 use koharu_renderer::{Frame, Renderer};
 use koharu_scene::{AssetRole, EntityId, Snapshot};
-use rayon::prelude::*;
 use serde::Deserialize;
 use specta::Type;
 use std::sync::Arc;
@@ -146,68 +145,35 @@ pub(crate) async fn export(
         .await?;
         return Ok(());
     }
-    let frames = try_join_all(pages.iter().map(|&page| renderer.render(&snapshot, page))).await?;
-    let (extension, images) = match format {
-        ProjectExportFormat::Png => {
-            let images = tokio_rayon::spawn(move || {
-                frames
-                    .par_iter()
-                    .map(|frame| -> Result<_> {
-                        let image = rasterizer
-                            .rasterize(&frame.raster_frame()?, RasterOptions::default())?
-                            .image;
+    let width = pages.len().to_string().len().max(4);
+    stream::iter(pages.into_iter().enumerate()).map(|(index, page)| {
+        let snapshot = snapshot.clone();
+        let renderer = renderer.clone();
+        let rasterizer = Arc::clone(&rasterizer);
+        let destination = destination.clone();
+        async move {
+            let stem = page_stem(&snapshot.page(page)?.page()?.label);
+            let frame = renderer.render(&snapshot, page).await?;
+            let (extension, bytes) = match format {
+                ProjectExportFormat::Png => {
+                    let image = rasterize(rasterizer, &frame, RasterOptions::default()).await?.image;
+                    let bytes = tokio_rayon::spawn(move || -> Result<Vec<u8>> {
                         let mut bytes = Vec::new();
-                        PngEncoder::new_with_quality(
-                            &mut bytes,
-                            CompressionType::Best,
-                            FilterType::Adaptive,
-                        )
-                        .write_image(
-                            image.as_raw(),
-                            image.width(),
-                            image.height(),
-                            ExtendedColorType::Rgba8,
-                        )?;
+                        PngEncoder::new_with_quality(&mut bytes, CompressionType::Best, FilterType::Adaptive)
+                            .write_image(image.as_raw(), image.width(), image.height(), ExtendedColorType::Rgba8)?;
                         Ok(bytes)
-                    })
-                    .collect::<Result<Vec<_>>>()
-            })
-            .await?;
-            ("png", images)
+                    }).await?;
+                    ("png", bytes)
+                }
+                ProjectExportFormat::Psd => ("psd", export_page(rasterizer, &snapshot, &frame, &PsdExportOptions::default()).await?),
+                ProjectExportFormat::Cbz => unreachable!(),
+            };
+            let path = if current_page.is_some() { destination } else { destination.join(format!("{:0width$}_{stem}.{extension}", index + 1)) };
+            tokio::fs::write(path, bytes).await?;
+            tracing::info!(target: "koharu_metrics", metric = "page_exported", format = ?format);
+            Ok::<_, anyhow::Error>(())
         }
-        ProjectExportFormat::Psd => {
-            let options = PsdExportOptions::default();
-            let images = try_join_all(
-                frames
-                    .iter()
-                    .map(|frame| export_page(Arc::clone(&rasterizer), &snapshot, frame, &options)),
-            )
-            .await?;
-            ("psd", images)
-        }
-        ProjectExportFormat::Cbz => unreachable!(),
-    };
-    tokio_rayon::spawn(move || -> Result<()> {
-        let width = pages.len().to_string().len().max(4);
-        // Async preparation and indexed encoding both preserve project order.
-        for (index, (page_id, bytes)) in pages.into_iter().zip(images).enumerate() {
-            let page = snapshot.page(page_id)?.page()?;
-            let stem = page_stem(&page.label);
-            let name = format!("{:0width$}_{stem}.{extension}", index + 1);
-            if current_page.is_some() {
-                std::fs::write(&destination, bytes)?;
-            } else {
-                std::fs::write(destination.join(name), bytes)?;
-            }
-            tracing::info!(
-                target: "koharu_metrics",
-                metric = "page_exported",
-                format = ?format,
-            );
-        }
-        Ok(())
-    })
-    .await?;
+    }).buffer_unordered(4).try_collect::<Vec<_>>().await?;
     Ok(())
 }
 

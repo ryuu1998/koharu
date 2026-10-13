@@ -56,7 +56,7 @@ pub(crate) async fn export(
             let renderer = renderer.clone();
             let rasterizer = Arc::clone(&rasterizer);
             async move {
-            let label = snapshot.page(page)?.page()?.label;
+                let label = snapshot.page(page)?.page()?.label;
                 let name = format!("{:0width$}_{}.jpg", index + 1, page_stem(&label));
                 let frame = renderer.render(&snapshot, page).await?;
                 let image = rasterize(rasterizer, &frame, RasterOptions::default())
