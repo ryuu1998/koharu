@@ -22,6 +22,7 @@ pub struct BatchSource {
     pub path: PathBuf,
     pub default_output: PathBuf,
     pub chapters: Vec<BatchChapter>,
+    pub exported: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -64,6 +65,46 @@ pub(crate) async fn browse_batch_output(
         .map(|folder| folder.path().to_owned()))
 }
 
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn get_batch_exports(
+    chapters: Vec<PathBuf>,
+    output: PathBuf,
+) -> std::result::Result<Vec<PathBuf>, Error> {
+    Ok(tokio_rayon::spawn(move || exported_chapters(&chapters, &output)).await)
+}
+
+fn exported_chapters(chapters: &[PathBuf], output: &Path) -> Vec<PathBuf> {
+    chapters
+        .par_iter()
+        .filter(|chapter| {
+            let Some(name) = chapter.file_name() else {
+                return false;
+            };
+            let target = output.join(name);
+            let Ok(target_path) = fs::canonicalize(&target) else {
+                return false;
+            };
+            if fs::canonicalize(chapter).is_ok_and(|source| source == target_path) {
+                return false;
+            }
+            let Ok(file) = fs::File::open(target) else {
+                return false;
+            };
+            let Ok(archive) = zip::ZipArchive::new(file) else {
+                return false;
+            };
+            archive.file_names().any(|name| {
+                Path::new(name)
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| matches!(extension.parse(), Ok(Format::Raster)))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 pub(super) fn discover(input: &Path) -> Result<Vec<PathBuf>> {
     let mut chapters = if input.is_file() {
         ensure!(is_cbz(input), "input must be a CBZ archive");
@@ -98,7 +139,10 @@ pub(super) fn is_cbz(path: &Path) -> bool {
 }
 
 fn scan(path: PathBuf) -> Result<BatchSource> {
-    let chapters = discover(&path)?
+    let paths = discover(&path)?;
+    let default_output = path.join("Translated");
+    let exported = exported_chapters(&paths, &default_output);
+    let chapters = paths
         .par_iter()
         .map(|path| {
             let mut chapter = BatchChapter {
@@ -124,9 +168,10 @@ fn scan(path: PathBuf) -> Result<BatchSource> {
         })
         .collect();
     Ok(BatchSource {
-        default_output: path.join("Translated"),
+        default_output,
         path,
         chapters,
+        exported,
     })
 }
 
@@ -212,6 +257,26 @@ pub(super) fn comic_info(path: &Path) -> Result<Option<Vec<u8>>> {
 mod tests {
     use super::*;
     use std::io::Write as _;
+
+    #[test]
+    fn recognizes_output_archives_without_marking_originals_or_broken_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("chapter.cbz");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&source).unwrap());
+        archive
+            .start_file("page.png", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(b"page").unwrap();
+        archive.finish().unwrap();
+        let paths = vec![source.clone()];
+        assert!(exported_chapters(&paths, directory.path()).is_empty());
+        let output = directory.path().join("Translated");
+        fs::create_dir(&output).unwrap();
+        fs::copy(&source, output.join("chapter.cbz")).unwrap();
+        assert_eq!(exported_chapters(&paths, &output), paths);
+        fs::write(output.join("chapter.cbz"), b"broken").unwrap();
+        assert!(exported_chapters(&paths, &output).is_empty());
+    }
 
     #[test]
     fn scans_natural_order_with_a_cover_and_reports_corrupt_archives() {

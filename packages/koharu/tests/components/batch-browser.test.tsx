@@ -17,6 +17,7 @@ vi.mock('@tauri-apps/api/core', async (original) => ({
 const source: BatchSource = {
   path: 'C:\\Manga',
   default_output: 'C:\\Manga\\Translated',
+  exported: [],
   chapters: [
     {
       path: 'C:\\Manga\\chapter1.cbz',

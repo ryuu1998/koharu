@@ -23,8 +23,10 @@ export const commands = {
 	path: string,
 	default_output: string,
 	chapters: BatchChapter[],
+	exported: string[],
 } | null>("browse_batch_source").then((v) => (v==null?v:({...v,chapters:v.chapters.map(i=>i)}) as typeof v)),
 	browseBatchOutput: () => __TAURI_INVOKE<string | null>("browse_batch_output"),
+	getBatchExports: (chapters: string[], output: string) => __TAURI_INVOKE<string[]>("get_batch_exports", { chapters, output }),
 	processBatch: (request: BatchRequest, onEvent: Channel<BatchEvent>) => __TAURI_INVOKE<BatchReport>("process_batch", { request, onEvent }),
 	stopBatch: () => __TAURI_INVOKE<null>("stop_batch"),
 	getProject: () => __TAURI_INVOKE<{
@@ -142,6 +144,7 @@ export type BatchSource = {
 	path: string,
 	default_output: string,
 	chapters: BatchChapter[],
+	exported: string[],
 };
 
 export type Bounds = {
