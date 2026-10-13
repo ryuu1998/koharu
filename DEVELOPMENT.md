@@ -27,6 +27,29 @@ This is separate from compilation; later launches reuse those installed packages
 
 You can also run `"Koharu Dev.bat" 1` or `"Koharu Dev.bat" 2` from a command prompt.
 
+The debug profile optimizes CPU image preparation, model postprocessing, layout,
+and export code. Debug symbols, assertions, hot reload, and the inspection endpoint
+remain enabled. Compiling these packages takes longer the first time; option 1
+continues to reuse the saved executable.
+
+## Comparing batch timings
+
+Use the same source chapter and saved model settings, with a new empty output
+folder for each comparison. Existing translated outputs have a green check and
+are skipped by default. Use the export-folder icon to choose another destination.
+
+The launch terminal prints import, pipeline, export, and total seconds for each
+successful chapter. A first run can include model loading; a second run in the
+same app session reuses resident models where memory permits. Record both when
+comparing the previous build with this one.
+
+Cloud translation allows up to six page requests in flight while local GPU model
+work stays serialized. The batch pipeline retains decoded images across stages,
+prepares OCR checkpoint files alongside detection, and prepares the export renderer
+during processing. OCR file preparation does not preload another model onto the
+GPU. These changes have focused checks; real chapter speedups still need measuring
+on the target device.
+
 ## Headless chapter translation
 
 The same debug executable can translate a CBZ file or a folder of chapters:

@@ -189,6 +189,23 @@ opt-level = 3
 [profile.dev.package.koharu-rasterizer]
 opt-level = 3
 
+# Keep CPU image preparation, model postprocessing, scene layout, and export
+# optimized while retaining the debug app's assertions and inspection tools.
+[profile.dev.package.koharu-ml]
+opt-level = 2
+
+[profile.dev.package.koharu-pipeline]
+opt-level = 2
+
+[profile.dev.package.koharu-renderer]
+opt-level = 2
+
+[profile.dev.package.koharu-app]
+opt-level = 2
+
+[profile.dev.package.fast_image_resize]
+opt-level = 3
+
 [profile.dev.package.postcard]
 opt-level = 3
 
