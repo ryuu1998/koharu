@@ -379,10 +379,9 @@ struct ChapterProgress {
 impl ChapterProgress {
     fn record(&mut self, progress: Progress) {
         if let Progress::Finished { page, stage, .. } | Progress::Skipped { page, stage } = progress
+            && self.finished.insert((page, stage))
         {
-            if self.finished.insert((page, stage)) {
-                self.phase_pages += 1;
-            }
+            self.phase_pages += 1;
         }
     }
 }
