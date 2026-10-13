@@ -11,7 +11,7 @@ import {
   type BatchSource,
 } from '@koharu/bridge/protocol'
 
-type ChapterStatus = 'running' | 'exporting' | 'translated' | 'skipped' | 'failed'
+type ChapterStatus = 'running' | 'exporting' | 'translated' | 'skipped' | 'failed' | 'stopped'
 
 interface BatchStore {
   source: BatchSource | null
@@ -115,7 +115,15 @@ export async function startBatch(): Promise<void> {
     )
     useBatchStore.setState({ report })
   } finally {
-    useBatchStore.setState({ running: false, stopping: false })
+    useBatchStore.setState((state) => {
+      const statuses = { ...state.statuses }
+      for (const path of Object.keys(statuses)) {
+        if (statuses[path] === 'running' || statuses[path] === 'exporting') {
+          statuses[path] = state.report?.stopped ? 'stopped' : 'failed'
+        }
+      }
+      return { running: false, stopping: false, statuses }
+    })
   }
 }
 

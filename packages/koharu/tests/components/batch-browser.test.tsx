@@ -120,5 +120,6 @@ describe('batch chapter browser', () => {
       expect(screen.getByRole('button', { name: 'Translate 1 chapter' })).toBeEnabled(),
     )
     expect(useBatchStore.getState().report?.stopped).toBe(true)
+    expect(useBatchStore.getState().statuses['C:\\Manga\\chapter1.cbz']).toBe('stopped')
   })
 })
