@@ -61,6 +61,12 @@ impl StageInput {
 #[async_trait]
 trait StageProcessor: Send + Sync {
     fn model(&self) -> &'static str;
+    fn parallelism(&self) -> usize {
+        1
+    }
+    fn uses_accelerator(&self) -> bool {
+        true
+    }
     fn skip(&self, _input: &StageInput) -> Result<bool> {
         Ok(false)
     }
@@ -103,6 +109,14 @@ impl Stages {
         self.processor(stage).model()
     }
 
+    pub(crate) fn parallelism(&self, stage: Stage) -> usize {
+        self.processor(stage).parallelism()
+    }
+
+    pub(crate) fn uses_accelerator(&self, stage: Stage) -> bool {
+        self.processor(stage).uses_accelerator()
+    }
+
     pub(crate) fn skip(&self, stage: Stage, input: &StageInput) -> Result<bool> {
         self.processor(stage).skip(input)
     }
@@ -133,6 +147,40 @@ fn finish(edit: Edit) -> Result<Patch> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn hosted_translation_has_six_slots_without_taking_the_accelerator_lane() {
+        let translator = koharu_translator::Translator::from_config(
+            koharu_ml::Device::cpu(),
+            koharu_config::Config::memory(koharu_translator::ProvidersConfig::default()),
+        )
+        .unwrap();
+        let config = PipelineConfig {
+            translation: crate::TranslationConfig {
+                model: koharu_translator::ModelSelection {
+                    provider: koharu_translator::Provider::DeepSeek,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let stages = Stages::new(&config, translator.clone(), &koharu_ml::Device::cpu()).unwrap();
+        assert_eq!(stages.parallelism(Stage::Translation), 6);
+        assert!(!stages.uses_accelerator(Stage::Translation));
+        for stage in [Stage::Detection, Stage::Ocr, Stage::Inpainting] {
+            assert_eq!(stages.parallelism(stage), 1);
+            assert!(stages.uses_accelerator(stage));
+        }
+        let local = Stages::new(
+            &PipelineConfig::default(),
+            translator,
+            &koharu_ml::Device::cpu(),
+        )
+        .unwrap();
+        assert_eq!(local.parallelism(Stage::Translation), 1);
+        assert!(local.uses_accelerator(Stage::Translation));
+    }
 
     fn asset(bytes: &'static [u8]) -> koharu_scene::AssetInput {
         koharu_scene::AssetInput::new(

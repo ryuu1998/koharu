@@ -20,6 +20,10 @@ pub(crate) struct StageRunner {
 }
 
 impl StageRunner {
+    pub(crate) fn parallelism(&self, stage: Stage) -> usize {
+        self.stages.parallelism(stage)
+    }
+
     pub(crate) fn new(
         config: &PipelineConfig,
         translator: koharu_translator::Translator,
@@ -68,14 +72,23 @@ impl StageRunner {
         if skip {
             return Ok(StageOutcome::Skipped);
         }
-        let permit = self.accelerator.acquire().await;
+        let accelerated = self.stages.uses_accelerator(job.stage);
+        let permit = if accelerated {
+            Some(self.accelerator.acquire().await)
+        } else {
+            None
+        };
         if job.stop.stopped() {
             return Ok(StageOutcome::Stopped);
         }
         let first = self.load_and_process(job, model).await;
         let failure = match first {
             Ok(outcome) => return Ok(outcome),
-            Err(failure) if is_out_of_memory(&failure.error) && !job.stop.stopped() => failure,
+            Err(failure)
+                if accelerated && is_out_of_memory(&failure.error) && !job.stop.stopped() =>
+            {
+                failure
+            }
             Err(failure) => return Err(self.stage_error(job.stage, model, failure)),
         };
 

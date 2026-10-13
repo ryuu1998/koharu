@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use anyhow::{Context as _, Result, ensure};
 use futures::{StreamExt as _, stream::FuturesUnordered};
@@ -30,7 +26,6 @@ pub(crate) struct Execution<'a> {
     scheduler: Scheduler,
     scene: Snapshot,
     images: BTreeMap<EntityId, Arc<ImageCache>>,
-    busy_stages: BTreeSet<Stage>,
     completed: usize,
     failure: Option<PipelineError>,
     base: koharu_scene::Revision,
@@ -72,6 +67,7 @@ impl<'a> Execution<'a> {
             },
         );
 
+        let scheduler = Scheduler::new(&pages, &stages, |stage| runner.parallelism(stage));
         Ok(Self {
             runner,
             resources,
@@ -79,10 +75,9 @@ impl<'a> Execution<'a> {
             stop: request.stop,
             progress: request.progress,
             scope,
-            scheduler: Scheduler::new(&pages, &stages),
+            scheduler,
             scene: snapshot,
             images: BTreeMap::new(),
-            busy_stages: BTreeSet::new(),
             completed: 0,
             failure: None,
             base,
@@ -109,7 +104,6 @@ impl<'a> Execution<'a> {
             let Some(completion) = running.next().await else {
                 break;
             };
-            self.busy_stages.remove(&completion.stage);
             if self.stopped() || self.failure.is_some() {
                 continue;
             }
@@ -125,8 +119,7 @@ impl<'a> Execution<'a> {
         if self.stopped() || self.failure.is_some() {
             return None;
         }
-        let (page, stage) = self.scheduler.start_next(&self.busy_stages)?;
-        self.busy_stages.insert(stage);
+        let (page, stage) = self.scheduler.start_next()?;
         let images = self
             .images
             .entry(page)

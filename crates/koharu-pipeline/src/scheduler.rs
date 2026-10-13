@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use koharu_scene::EntityId;
 
@@ -46,6 +46,8 @@ impl PageWork {
 }
 
 pub(crate) struct Scheduler {
+    capacities: BTreeMap<Stage, usize>,
+    running: BTreeMap<Stage, usize>,
     pages: Vec<PageWork>,
     page_index: BTreeMap<EntityId, usize>,
     page_window: usize,
@@ -55,7 +57,16 @@ pub(crate) struct Scheduler {
 }
 
 impl Scheduler {
-    pub(crate) fn new(pages: &[EntityId], stages: &[Stage]) -> Self {
+    pub(crate) fn new(
+        pages: &[EntityId],
+        stages: &[Stage],
+        capacity: impl Fn(Stage) -> usize,
+    ) -> Self {
+        let capacities = stages
+            .iter()
+            .map(|stage| (*stage, capacity(*stage).max(1)))
+            .collect::<BTreeMap<_, _>>();
+        let page_window = capacities.values().sum::<usize>().max(1);
         let pages = pages
             .iter()
             .map(|page| PageWork {
@@ -71,13 +82,15 @@ impl Scheduler {
             .collect::<Vec<_>>();
         let total = pages.len().saturating_mul(stages.len());
         Self {
+            capacities,
+            running: BTreeMap::new(),
             page_index: pages
                 .iter()
                 .enumerate()
                 .map(|(index, page)| (page.page, index))
                 .collect(),
             pages,
-            page_window: stages.len().max(1),
+            page_window,
             active_pages: 0,
             head: 0,
             total,
@@ -88,10 +101,7 @@ impl Scheduler {
         self.total
     }
 
-    pub(crate) fn start_next(
-        &mut self,
-        busy_stages: &BTreeSet<Stage>,
-    ) -> Option<(EntityId, Stage)> {
+    pub(crate) fn start_next(&mut self) -> Option<(EntityId, Stage)> {
         for page_index in self.head..self.pages.len() {
             let started = self.pages[page_index].started();
             if !started && self.active_pages >= self.page_window {
@@ -104,7 +114,8 @@ impl Scheduler {
                     .enumerate()
                     .find_map(|(index, work)| {
                         (work.state == WorkState::Pending
-                            && !busy_stages.contains(&work.stage)
+                            && self.running.get(&work.stage).copied().unwrap_or(0)
+                                < self.capacities[&work.stage]
                             && self.pages[page_index].ready(index))
                         .then_some(index)
                     });
@@ -117,6 +128,7 @@ impl Scheduler {
             let page = &mut self.pages[page_index];
             let work = &mut page.stages[stage_index];
             work.state = WorkState::Running;
+            *self.running.entry(work.stage).or_default() += 1;
             return Some((page.page, work.stage));
         }
         None
@@ -129,6 +141,12 @@ impl Scheduler {
         let page = &mut self.pages[page_index];
         let was_finished = page.finished();
         if let Some(work) = page.stages.iter_mut().find(|work| work.stage == stage) {
+            if work.state == WorkState::Running {
+                *self
+                    .running
+                    .get_mut(&stage)
+                    .expect("running stage has a reservation") -= 1;
+            }
             work.state = WorkState::Finished;
         }
         let page_finished = !was_finished && page.finished();
@@ -161,60 +179,71 @@ mod tests {
     #[test]
     fn starts_pages_in_order_and_models_independently() {
         let pages = pages(2);
-        let mut scheduler = Scheduler::new(&pages, &Stage::ALL);
-        let mut busy = BTreeSet::new();
+        let mut scheduler = Scheduler::new(&pages, &Stage::ALL, |_| 1);
 
-        let first = scheduler.start_next(&busy).unwrap();
+        let first = scheduler.start_next().unwrap();
         assert_eq!(first, (pages[0], Stage::Detection));
-        busy.insert(Stage::Detection);
-        assert!(scheduler.start_next(&busy).is_none());
+        assert!(scheduler.start_next().is_none());
 
-        busy.clear();
         assert!(!scheduler.complete_stage(pages[0], Stage::Detection));
-        let ocr = scheduler.start_next(&busy).unwrap();
-        busy.insert(ocr.1);
-        let inpainting = scheduler.start_next(&busy).unwrap();
-        busy.insert(inpainting.1);
-        let next_page = scheduler.start_next(&busy).unwrap();
-        busy.insert(next_page.1);
+        let ocr = scheduler.start_next().unwrap();
+        let inpainting = scheduler.start_next().unwrap();
+        let next_page = scheduler.start_next().unwrap();
         assert_eq!(ocr, (pages[0], Stage::Ocr));
         assert_eq!(inpainting, (pages[0], Stage::Inpainting));
         assert_eq!(next_page, (pages[1], Stage::Detection));
 
         assert!(!scheduler.complete_stage(pages[0], Stage::Ocr));
-        busy.remove(&Stage::Ocr);
-        let translation = scheduler.start_next(&busy).unwrap();
+        let translation = scheduler.start_next().unwrap();
         assert_eq!(translation, (pages[0], Stage::Translation));
-        assert!(busy.contains(&Stage::Detection));
-        assert!(busy.contains(&Stage::Inpainting));
+        assert_eq!(scheduler.running[&Stage::Detection], 1);
+        assert_eq!(scheduler.running[&Stage::Inpainting], 1);
     }
 
     #[test]
     fn sliding_window_backpressures_fast_upstream_models() {
         let pages = pages(4);
         let stages = [Stage::Detection, Stage::Ocr, Stage::Inpainting];
-        let mut scheduler = Scheduler::new(&pages, &stages);
-        let mut busy = BTreeSet::new();
+        let mut scheduler = Scheduler::new(&pages, &stages, |_| 1);
 
-        assert_eq!(
-            scheduler.start_next(&busy),
-            Some((pages[0], Stage::Detection))
-        );
+        assert_eq!(scheduler.start_next(), Some((pages[0], Stage::Detection)));
         assert!(!scheduler.complete_stage(pages[0], Stage::Detection));
-        let ocr = scheduler.start_next(&busy).unwrap();
-        busy.insert(ocr.1);
-        let inpainting = scheduler.start_next(&busy).unwrap();
-        busy.insert(inpainting.1);
+        assert_eq!(scheduler.start_next(), Some((pages[0], Stage::Ocr)));
+        assert_eq!(scheduler.start_next(), Some((pages[0], Stage::Inpainting)));
 
         for page in &pages[1..3] {
-            assert_eq!(scheduler.start_next(&busy), Some((*page, Stage::Detection)));
+            assert_eq!(scheduler.start_next(), Some((*page, Stage::Detection)));
             assert!(!scheduler.complete_stage(*page, Stage::Detection));
         }
-        assert!(scheduler.start_next(&busy).is_none());
+        assert!(scheduler.start_next().is_none());
 
         assert!(!scheduler.complete_stage(pages[0], Stage::Ocr));
         assert!(scheduler.complete_stage(pages[0], Stage::Inpainting));
-        busy.clear();
-        assert_eq!(scheduler.start_next(&busy), Some((pages[1], Stage::Ocr)));
+        assert_eq!(scheduler.start_next(), Some((pages[1], Stage::Ocr)));
+    }
+
+    #[test]
+    fn cloud_pages_are_bounded_and_refill_after_out_of_order_completion() {
+        let pages = pages(8);
+        let mut scheduler = Scheduler::new(&pages, &[Stage::Translation], |_| 6);
+        for page in &pages[..6] {
+            assert_eq!(scheduler.start_next(), Some((*page, Stage::Translation)));
+        }
+        assert!(scheduler.start_next().is_none());
+        assert!(scheduler.complete_stage(pages[3], Stage::Translation));
+        assert_eq!(scheduler.start_next(), Some((pages[6], Stage::Translation)));
+        assert!(scheduler.start_next().is_none());
+        assert_eq!(scheduler.active_pages, 6);
+        assert_eq!(scheduler.running[&Stage::Translation], 6);
+    }
+
+    #[test]
+    fn local_translation_stays_serial() {
+        let pages = pages(2);
+        let mut scheduler = Scheduler::new(&pages, &[Stage::Translation], |_| 1);
+        assert_eq!(scheduler.start_next(), Some((pages[0], Stage::Translation)));
+        assert!(scheduler.start_next().is_none());
+        assert!(scheduler.complete_stage(pages[0], Stage::Translation));
+        assert_eq!(scheduler.start_next(), Some((pages[1], Stage::Translation)));
     }
 }
