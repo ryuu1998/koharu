@@ -14,6 +14,7 @@ use tauri_runtime_cef::CefRuntime;
 
 use super::{Error, import::Format};
 
+const COMIC_INFO_LIMIT: u64 = 2 * 1024 * 1024;
 const COVER_LIMIT: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -177,6 +178,34 @@ fn inspect(path: &Path) -> Result<(usize, String)> {
         images.len(),
         format!("data:image/webp;base64,{}", STANDARD.encode(&*thumbnail)),
     ))
+}
+
+pub(super) fn comic_info(path: &Path) -> Result<Option<Vec<u8>>> {
+    let mut archive = zip::ZipArchive::new(fs::File::open(path)?)?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        let metadata = Path::new(entry.name())
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("ComicInfo.xml"));
+        if entry.is_file() && metadata {
+            ensure!(
+                entry.size() <= COMIC_INFO_LIMIT,
+                "ComicInfo.xml exceeds the 2 MiB metadata limit"
+            );
+            let mut bytes = Vec::new();
+            entry
+                .by_ref()
+                .take(COMIC_INFO_LIMIT + 1)
+                .read_to_end(&mut bytes)?;
+            ensure!(
+                bytes.len() as u64 <= COMIC_INFO_LIMIT,
+                "ComicInfo.xml exceeds the 2 MiB metadata limit"
+            );
+            return Ok(Some(bytes));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

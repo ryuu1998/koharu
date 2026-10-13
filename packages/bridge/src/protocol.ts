@@ -25,6 +25,8 @@ export const commands = {
 	chapters: BatchChapter[],
 } | null>("browse_batch_source").then((v) => (v==null?v:({...v,chapters:v.chapters.map(i=>i)}) as typeof v)),
 	browseBatchOutput: () => __TAURI_INVOKE<string | null>("browse_batch_output"),
+	processBatch: (request: BatchRequest, onEvent: Channel<BatchEvent>) => __TAURI_INVOKE<BatchReport>("process_batch", { request, onEvent }),
+	stopBatch: () => __TAURI_INVOKE<null>("stop_batch"),
 	getProject: () => __TAURI_INVOKE<{
 	name: string,
 	revision: Revision,
@@ -113,6 +115,27 @@ export type BatchChapter = {
 	pages: number,
 	thumbnail: string | null,
 	error: string | null,
+};
+
+export type BatchEvent = { event: "started"; total_chapters: number } | { event: "chapter_started"; index: number; name: string; pages: number } | { event: "chapter_progress"; index: number; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; index: number } | { event: "chapter_finished"; index: number; output: string } | { event: "chapter_skipped"; index: number; output: string } | { event: "chapter_failed"; index: number; name: string; error: string } | { event: "finished"; report: BatchReport };
+
+export type BatchFailure = {
+	chapter: string,
+	error: string,
+};
+
+export type BatchReport = {
+	completed: number,
+	skipped: number,
+	failures: BatchFailure[],
+	stopped: boolean,
+};
+
+export type BatchRequest = {
+	chapters: string[],
+	output: string,
+	jpeg_quality: number,
+	overwrite: boolean,
 };
 
 export type BatchSource = {
