@@ -11,12 +11,14 @@ use koharu_scene::{AssetRole, EntityId, Snapshot};
 use rayon::prelude::*;
 use serde::Deserialize;
 use specta::Type;
-use std::{io::Write as _, sync::Arc};
+use std::sync::Arc;
 use tauri::{State, WebviewWindow, ipc::IpcResponse};
 use tauri_runtime_cef::CefRuntime;
 
 use super::{Error, project::CurrentProject};
 use koharu_desktop::Desktop;
+
+pub(super) mod cbz;
 
 const THUMBNAIL_EDGE: u32 = 128;
 
@@ -131,9 +133,22 @@ pub(crate) async fn export(
     };
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
+    if matches!(format, ProjectExportFormat::Cbz) {
+        cbz::export(
+            snapshot,
+            renderer,
+            rasterizer,
+            destination,
+            cbz::DEFAULT_QUALITY,
+            None,
+            true,
+        )
+        .await?;
+        return Ok(());
+    }
     let frames = try_join_all(pages.iter().map(|&page| renderer.render(&snapshot, page))).await?;
     let (extension, images) = match format {
-        ProjectExportFormat::Png | ProjectExportFormat::Cbz => {
+        ProjectExportFormat::Png => {
             let images = tokio_rayon::spawn(move || {
                 frames
                     .par_iter()
@@ -170,29 +185,16 @@ pub(crate) async fn export(
             .await?;
             ("psd", images)
         }
+        ProjectExportFormat::Cbz => unreachable!(),
     };
     tokio_rayon::spawn(move || -> Result<()> {
-        let mut archive = if matches!(format, ProjectExportFormat::Cbz) {
-            let directory = destination.parent().context("archive path has no parent")?;
-            Some(zip::ZipWriter::new(tempfile::NamedTempFile::new_in(
-                directory,
-            )?))
-        } else {
-            None
-        };
         let width = pages.len().to_string().len().max(4);
         // Async preparation and indexed encoding both preserve project order.
         for (index, (page_id, bytes)) in pages.into_iter().zip(images).enumerate() {
             let page = snapshot.page(page_id)?.page()?;
             let stem = page_stem(&page.label);
             let name = format!("{:0width$}_{stem}.{extension}", index + 1);
-            if let Some(archive) = &mut archive {
-                // PNG data is already compressed.
-                let options = zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Stored);
-                archive.start_file(name, options)?;
-                archive.write_all(&bytes)?;
-            } else if current_page.is_some() {
+            if current_page.is_some() {
                 std::fs::write(&destination, bytes)?;
             } else {
                 std::fs::write(destination.join(name), bytes)?;
@@ -202,9 +204,6 @@ pub(crate) async fn export(
                 metric = "page_exported",
                 format = ?format,
             );
-        }
-        if let Some(archive) = archive {
-            archive.finish()?.persist(destination)?;
         }
         Ok(())
     })
