@@ -116,7 +116,7 @@ fn encode(image: RgbaImage, quality: u8) -> Result<Vec<u8>> {
 fn composite_on_white(image: RgbaImage) -> RgbImage {
     let (width, height) = image.dimensions();
     let mut bytes = Vec::with_capacity(width as usize * height as usize * 3);
-    for pixel in image.as_raw().chunks_exact(4) {
+    for pixel in image.as_raw().as_chunks::<4>().0 {
         let alpha = u16::from(pixel[3]);
         for channel in &pixel[..3] {
             bytes.push(((u16::from(*channel) * alpha + 255 * (255 - alpha) + 127) / 255) as u8);
