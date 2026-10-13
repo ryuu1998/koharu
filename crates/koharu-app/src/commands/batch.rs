@@ -346,19 +346,26 @@ async fn process_chapter(
     });
     // One execution preserves the bounded page window and decoded images across stages.
     let snapshot = session.lock().await.snapshot();
-    let report = pipeline
-        .execute(
-            snapshot,
-            Request {
-                operation: Operation::Full,
-                scope: Scope::Project,
-                stop: stop.clone(),
-                progress: Some(callback),
-                inpainting_mask: None,
-            },
-            &mut SessionCommitter(Arc::clone(&session)),
-        )
-        .await?;
+    let mut committer = SessionCommitter(Arc::clone(&session));
+    let processing = pipeline.execute(
+        snapshot,
+        Request {
+            operation: Operation::Full,
+            scope: Scope::Project,
+            stop: stop.clone(),
+            progress: Some(callback),
+            inpainting_mask: None,
+        },
+        &mut committer,
+    );
+    let preparation = desktop.rasterizer();
+    tokio::pin!(processing, preparation);
+    // Renderer setup can overlap processing, but a renderer failure must not drop
+    // in-flight model jobs before the pipeline has drained them.
+    let (report, prepared) = tokio::select! {
+        report = &mut processing => (report?, None),
+        prepared = &mut preparation => (processing.await?, Some(prepared)),
+    };
     ensure!(
         report.status == RunStatus::Completed && !stop.stopped(),
         "batch stopped"
@@ -366,12 +373,17 @@ async fn process_chapter(
     let processing_elapsed = processing_started.elapsed();
     let export_started = Instant::now();
     events(BatchEvent::ChapterExporting { index });
+    let rasterizer = match prepared {
+        Some(result) => result?,
+        None => preparation.await?,
+    };
     let path = chapter.to_owned();
     let metadata = tokio_rayon::spawn(move || batch_source::comic_info(&path)).await?;
+    let snapshot = session.lock().await.snapshot();
     cbz::export(
-        session.lock().await.snapshot(),
+        snapshot,
         desktop.renderer(),
-        desktop.rasterizer().await?,
+        rasterizer,
         output,
         quality,
         metadata,
