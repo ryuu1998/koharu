@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BatchPage } from '@/components/batch/BatchPage'
@@ -78,7 +78,11 @@ describe('batch chapter browser', () => {
   it('selects healthy chapters and leaves corrupt archives disabled', async () => {
     vi.spyOn(commands, 'browseBatchSource').mockResolvedValue(source)
     render(<BatchPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose source folder' }))
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Batch folders' })).getByRole('button', {
+        name: 'Choose source folder',
+      }),
+    )
     await waitFor(() =>
       expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeChecked(),
     )

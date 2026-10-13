@@ -2,14 +2,12 @@
 
 import {
   ArrowLeft,
-  CheckCircle2,
+  Check,
+  Download,
   FileArchive,
-  FolderInput,
-  FolderOutput,
+  FolderOpen,
   LoaderCircle,
-  Play,
   Settings,
-  Square,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -33,7 +31,9 @@ export function BatchPage() {
   const select = useBatchStore((s) => s.select)
   const running = useBatchStore((s) => s.running)
   const stopping = useBatchStore((s) => s.stopping)
+  const activePath = useBatchStore((s) => s.activePath)
   const statuses = useBatchStore((s) => s.statuses)
+  const report = useBatchStore((s) => s.report)
   const setWorkspace = useKoharuStore((s) => s.setWorkspace)
   const [busy, setBusy] = useState<'source' | 'output' | null>(null)
   const chapters = source?.chapters ?? []
@@ -62,218 +62,262 @@ export function BatchPage() {
 
   return (
     <main className='flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--surface-canvas)]'>
-      <div className='mx-auto flex min-h-0 w-full max-w-[1120px] flex-1 flex-col px-4 py-4 sm:px-8 sm:py-5'>
-        <header className='mb-4 flex shrink-0 items-center justify-between gap-3'>
-          <div className='flex items-center gap-3'>
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              aria-label={t('common.back')}
-              onClick={() => setWorkspace('project')}
-            >
-              <ArrowLeft className='size-4' />
-            </Button>
-            <h1 className='text-lg font-semibold tracking-tight'>{t('batch.tab')}</h1>
+      <header className='flex shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-border/60 px-5 py-4 sm:px-8'>
+        <div className='flex min-w-0 items-center gap-4'>
+          <Button
+            variant='ghost'
+            size='icon'
+            aria-label={t('common.back')}
+            onClick={() => setWorkspace('project')}
+            className='-ms-2 text-muted-foreground'
+          >
+            <ArrowLeft className='size-[18px]' strokeWidth={1.75} />
+          </Button>
+          <div className='min-w-0'>
+            <h1 className='text-xl leading-7 font-semibold tracking-tight'>{t('batch.tab')}</h1>
+            {source && (
+              <p
+                className='mt-0.5 max-w-64 truncate text-xs text-muted-foreground'
+                title={source.path}
+              >
+                {source.path.split(/[\\/]/).filter(Boolean).pop()}
+              </p>
+            )}
           </div>
+        </div>
+        <div className='flex items-center gap-4'>
           <div className='flex items-center gap-1' role='group' aria-label={t('batch.folders')}>
             <Button
               variant='ghost'
-              size='icon-sm'
+              size='icon'
               aria-label={t('batch.chooseSource')}
-              title={`${t('batch.source')}${source ? `\n${source.path}` : ''}`}
+              title={t('batch.source') + (source ? '\n' + source.path : '')}
               disabled={!!busy || running}
-              className={cn(source && 'text-primary')}
               onClick={() => void browseSource().catch(() => undefined)}
+              className='text-foreground/70'
             >
               {busy === 'source' ? (
-                <LoaderCircle className='size-4 animate-spin' />
+                <LoaderCircle className='size-[18px]' strokeWidth={1.75} />
               ) : (
-                <FolderInput className='size-4' />
+                <FolderOpen className='size-[18px]' strokeWidth={1.75} />
               )}
             </Button>
             <Button
               variant='ghost'
-              size='icon-sm'
+              size='icon'
               aria-label={t('batch.chooseOutput')}
-              title={`${t('batch.output')}${output ? `\n${output}` : ''}`}
+              title={t('batch.output') + (output ? '\n' + output : '')}
               disabled={!!busy || running || !source}
               onClick={() => void browseOutput().catch(() => undefined)}
+              className='text-foreground/70'
             >
               {busy === 'output' ? (
-                <LoaderCircle className='size-4 animate-spin' />
+                <LoaderCircle className='size-[18px]' strokeWidth={1.75} />
               ) : (
-                <FolderOutput className='size-4' />
+                <Download className='size-[18px]' strokeWidth={1.75} />
               )}
             </Button>
-            <span className='mx-2 h-4 w-px bg-border' aria-hidden='true' />
             <Button
               variant='ghost'
-              size='icon-sm'
+              size='icon'
               aria-label={t('menu.settings')}
               title={t('menu.settings')}
               disabled={running}
               onClick={() => setWorkspace('settings')}
+              className='text-foreground/70'
             >
-              <Settings className='size-4' />
+              <Settings className='size-[18px]' strokeWidth={1.75} />
             </Button>
           </div>
-        </header>
-        <div className='mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3'>
-          <span className='text-[11px] text-muted-foreground tabular-nums'>
-            {t('batch.selected', { count: selected.length, total: chapters.length })}
-          </span>
-          <div className='flex items-center gap-1'>
+          <span className='h-5 w-px bg-border' aria-hidden='true' />
+          {running ? (
             <Button
-              variant='ghost'
-              size='sm'
-              className='h-7 text-[11px]'
-              disabled={!!busy || running || !pending.length}
-              onClick={() => select(pending.map((c) => c.path))}
+              variant='outline'
+              className='min-w-28 text-xs'
+              disabled={stopping}
+              onClick={() => void stopBatch().catch(() => undefined)}
             >
-              {t('batch.selectAll')}
+              {t(stopping ? 'batch.stopping' : 'activity.stop')}
             </Button>
-            <Button
-              variant='ghost'
-              size='sm'
-              className='h-7 text-[11px]'
-              disabled={!!busy || running || !selected.length}
-              onClick={() => select([])}
-            >
-              {t('batch.clear')}
-            </Button>
-            {running ? (
-              <Button
-                variant='outline'
-                size='sm'
-                className='ml-2 h-7 gap-1.5 text-[11px]'
-                disabled={stopping}
-                onClick={() => void stopBatch().catch(() => undefined)}
-              >
-                {stopping ? (
-                  <LoaderCircle className='size-3 animate-spin' />
-                ) : (
-                  <Square className='size-3' />
-                )}
-                {t(stopping ? 'batch.stopping' : 'activity.stop')}
-              </Button>
-            ) : (
-              <Button
-                size='sm'
-                className='ml-2 h-7 gap-1.5 text-[11px] text-[#1f080c]'
-                disabled={!!busy || !selected.length || !output}
-                onClick={() => void startBatch().catch(() => undefined)}
-              >
-                <Play className='size-3' />
-                {t('batch.translate', { count: selected.length })}
-              </Button>
-            )}
-          </div>
-        </div>
-        <section className='min-h-0 flex-1 overflow-y-auto' aria-label={t('batch.chapters')}>
-          {!chapters.length ? (
-            <div className='grid h-full place-items-center p-8 text-center'>
-              <div className='max-w-xs'>
-                <FileArchive
-                  className='mx-auto mb-3 size-8 text-muted-foreground/50'
-                  aria-hidden='true'
-                />
-                <p className='text-xs font-medium'>
-                  {t(source ? 'batch.emptyFolder' : 'batch.emptyTitle')}
-                </p>
-              </div>
-            </div>
           ) : (
-            <div className='grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4 pb-3 sm:gap-5'>
-              {chapters.map((chapter) => {
-                const done = exported.includes(chapter.path)
-                const status = statuses[chapter.path]
-                return (
-                  <label
-                    key={chapter.path}
-                    className={cn(
-                      'group relative min-w-0 rounded-xl border bg-[var(--surface-panel)] p-2 transition-colors',
-                      done
-                        ? 'border-green-600/40 dark:border-green-400/35'
-                        : selected.includes(chapter.path)
-                          ? 'border-primary/70 bg-primary/[0.04]'
-                          : 'border-border/80',
-                      chapter.error && 'opacity-55',
-                      !running &&
-                        !chapter.error &&
-                        !done &&
-                        'cursor-pointer hover:border-primary/60',
-                    )}
+            <Button
+              className='min-w-28 px-4 text-xs'
+              disabled={!!busy || !selected.length || !output}
+              onClick={() => void startBatch().catch(() => undefined)}
+            >
+              {t('batch.translate', { count: selected.length })}
+            </Button>
+          )}
+        </div>
+      </header>
+      <div className='flex min-h-0 flex-1 flex-col min-[900px]:flex-row'>
+        <section className='flex min-h-0 min-w-0 flex-1 flex-col' aria-label={t('batch.chapters')}>
+          <div className='flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 py-5 sm:px-8'>
+            <span className='text-xs text-muted-foreground tabular-nums'>
+              {t('batch.selected', { count: selected.length, total: chapters.length })}
+            </span>
+            <div className='flex items-center gap-2'>
+              <Button
+                variant='ghost'
+                size='sm'
+                className='text-xs text-muted-foreground'
+                disabled={!!busy || running || !pending.length}
+                onClick={() => select(pending.map((c) => c.path))}
+              >
+                {t('batch.selectAll')}
+              </Button>
+              <Button
+                variant='ghost'
+                size='sm'
+                className='text-xs text-muted-foreground'
+                disabled={!!busy || running || !selected.length}
+                onClick={() => select([])}
+              >
+                {t('batch.clear')}
+              </Button>
+            </div>
+          </div>
+          {!running && report && (
+            <p role='status' className='px-5 pb-5 text-xs text-muted-foreground sm:px-8'>
+              {report.stopped && <span className='me-2 font-medium'>{t('batch.stopped')}</span>}
+              {t('batch.summary', {
+                completed: report.completed,
+                skipped: report.skipped,
+                failed: report.failures.length,
+              })}
+            </p>
+          )}
+          <div className='min-h-0 flex-1 overflow-y-auto px-5 pb-8 sm:px-8'>
+            {!chapters.length ? (
+              <div className='grid h-full min-h-48 place-items-center text-center'>
+                <div className='max-w-xs py-12'>
+                  <FolderOpen
+                    className='mx-auto mb-5 size-10 text-muted-foreground/40'
+                    strokeWidth={1}
+                    aria-hidden='true'
+                  />
+                  <p className='text-base font-medium'>
+                    {t(source ? 'batch.emptyFolder' : 'batch.emptyTitle')}
+                  </p>
+                  <Button
+                    variant='secondary'
+                    className='mt-5 text-xs'
+                    disabled={!!busy}
+                    onClick={() => void browseSource().catch(() => undefined)}
                   >
-                    <span className='relative block aspect-[3/4] overflow-hidden rounded-lg bg-[var(--surface-well)]'>
-                      {chapter.thumbnail ? (
-                        <img
-                          src={chapter.thumbnail}
-                          alt=''
-                          loading='lazy'
-                          className='size-full object-cover'
-                        />
-                      ) : (
-                        <span className='grid size-full place-items-center'>
-                          <FileArchive className='size-7 text-muted-foreground/40' />
-                        </span>
+                    {t('batch.chooseSource')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className='grid grid-cols-[repeat(auto-fill,minmax(min(100%,190px),1fr))] gap-x-6 gap-y-8 pt-1 pb-2'>
+                {chapters.map((chapter) => {
+                  const done = exported.includes(chapter.path)
+                  const status = statuses[chapter.path]
+                  return (
+                    <label
+                      key={chapter.path}
+                      className={cn(
+                        'group block min-w-0',
+                        !running && !busy && !chapter.error && !done && 'cursor-pointer',
                       )}
-                      <input
-                        type='checkbox'
-                        checked={selected.includes(chapter.path)}
-                        disabled={!!busy || running || !!chapter.error || done}
-                        aria-label={chapter.name}
-                        className='absolute top-2 left-2 size-4 accent-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-                        onChange={(event) =>
-                          select(
-                            event.currentTarget.checked
-                              ? [...selected, chapter.path]
-                              : selected.filter((path) => path !== chapter.path),
-                          )
-                        }
-                      />
-                      {done && (
-                        <span className='absolute top-2 right-2 rounded-full bg-[var(--surface-panel)] p-1 text-green-700 dark:text-green-300'>
-                          <CheckCircle2 className='size-4' aria-hidden='true' />
-                        </span>
-                      )}
-                    </span>
-                    <span className='mt-2 block truncate text-xs font-medium' title={chapter.name}>
-                      {chapter.name}
-                    </span>
-                    <span className='mt-1 flex min-w-0 items-center justify-between gap-2 text-[10px]'>
+                    >
                       <span
                         className={cn(
-                          'truncate',
-                          done
-                            ? 'text-green-700 dark:text-green-300'
-                            : chapter.error || status === 'failed'
-                              ? 'text-destructive'
-                              : 'text-muted-foreground',
+                          'relative block aspect-[3/4] rounded-lg bg-[var(--surface-well)] shadow-sm ring-1 ring-foreground/5',
+                          (status === 'running' || status === 'exporting') &&
+                            'ring-2 ring-primary ring-offset-4 ring-offset-[var(--surface-canvas)]',
                         )}
-                        title={chapter.error ?? undefined}
                       >
-                        {chapter.error ??
-                          t(
+                        {chapter.thumbnail ? (
+                          <img
+                            src={chapter.thumbnail}
+                            alt=''
+                            loading='lazy'
+                            className='size-full rounded-lg object-contain'
+                          />
+                        ) : (
+                          <span className='grid size-full place-items-center'>
+                            <FileArchive
+                              className='size-9 text-muted-foreground/30'
+                              strokeWidth={1.25}
+                            />
+                          </span>
+                        )}
+                        <input
+                          type='checkbox'
+                          checked={selected.includes(chapter.path)}
+                          disabled={!!busy || running || !!chapter.error || done}
+                          aria-label={chapter.name}
+                          className='peer sr-only'
+                          onChange={(event) =>
+                            select(
+                              event.currentTarget.checked
+                                ? [...selected, chapter.path]
+                                : selected.filter((path) => path !== chapter.path),
+                            )
+                          }
+                        />
+                        {!done && !chapter.error && (
+                          <span
+                            aria-hidden='true'
+                            className='absolute top-3 left-3 grid size-5 place-items-center rounded-full border border-white/80 bg-black/25 text-primary-foreground shadow-sm peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-ring [&>svg]:invisible peer-checked:[&>svg]:visible'
+                          >
+                            <Check className='size-3.5' strokeWidth={2.5} />
+                          </span>
+                        )}
+                        {done && (
+                          <span
+                            aria-hidden='true'
+                            className='absolute top-3 right-3 grid size-6 place-items-center rounded-full bg-green-700 text-white shadow-sm dark:bg-green-300 dark:text-green-950'
+                          >
+                            <Check className='size-4' strokeWidth={2} />
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className='mt-3 line-clamp-2 block text-[13px] leading-5 font-medium break-words'
+                        title={chapter.name}
+                      >
+                        {chapter.name.replace(/\.cbz$/i, '')}
+                      </span>
+                      <span className='mt-1 flex min-w-0 items-center justify-between gap-2 text-[11px]'>
+                        <span
+                          className={cn(
+                            'truncate',
                             done
-                              ? status === 'translated'
-                                ? 'batch.translated'
-                                : 'batch.alreadyTranslated'
-                              : status
-                                ? `batch.${status}`
-                                : 'batch.ready',
+                              ? 'text-green-700 dark:text-green-300'
+                              : chapter.error || status === 'failed'
+                                ? 'text-destructive'
+                                : status === 'running' || status === 'exporting'
+                                  ? 'text-primary'
+                                  : 'text-muted-foreground',
                           )}
+                          title={chapter.error ?? undefined}
+                        >
+                          {chapter.error ??
+                            t(
+                              done
+                                ? status === 'translated'
+                                  ? 'batch.translated'
+                                  : 'batch.alreadyTranslated'
+                                : status
+                                  ? 'batch.' + status
+                                  : 'batch.ready',
+                            )}
+                        </span>
+                        <span className='shrink-0 text-muted-foreground tabular-nums'>
+                          {t('batch.pages', { count: chapter.pages })}
+                        </span>
                       </span>
-                      <span className='shrink-0 text-muted-foreground tabular-nums'>
-                        {t('batch.pages', { count: chapter.pages })}
-                      </span>
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          )}
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </section>
-        <BatchProgress />
+        <BatchProgress key={running ? activePath : 'idle'} />
       </div>
     </main>
   )
