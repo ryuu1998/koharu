@@ -20,6 +20,10 @@ pub(crate) struct StageRunner {
 }
 
 impl StageRunner {
+    pub(crate) async fn prefetch_ocr(&self) -> Result<()> {
+        self.stages.prefetch_ocr().await
+    }
+
     pub(crate) fn parallelism(&self, stage: Stage) -> usize {
         self.stages.parallelism(stage)
     }

@@ -83,6 +83,10 @@ pub(crate) struct Stages {
 }
 
 impl Stages {
+    pub(crate) async fn prefetch_ocr(&self) -> Result<()> {
+        self.ocr.prefetch().await
+    }
+
     pub(crate) fn new(
         config: &PipelineConfig,
         translator: koharu_translator::Translator,

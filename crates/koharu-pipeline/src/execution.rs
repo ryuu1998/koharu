@@ -31,6 +31,7 @@ pub(crate) struct Execution<'a> {
     base: koharu_scene::Revision,
     started: Instant,
     inpainting_mask: Option<crate::InpaintingMask>,
+    prefetch_ocr: bool,
 }
 
 impl<'a> Execution<'a> {
@@ -68,6 +69,8 @@ impl<'a> Execution<'a> {
         );
 
         let scheduler = Scheduler::new(&pages, &stages, |stage| runner.parallelism(stage));
+        let prefetch_ocr =
+            stages.contains(&Stage::Detection) && stages.contains(&Stage::Ocr) && !pages.is_empty();
         Ok(Self {
             runner,
             resources,
@@ -83,10 +86,31 @@ impl<'a> Execution<'a> {
             base,
             started,
             inpainting_mask: request.inpainting_mask,
+            prefetch_ocr,
         })
     }
 
-    pub(crate) async fn run(mut self) -> std::result::Result<Report, PipelineError> {
+    pub(crate) async fn run(self) -> std::result::Result<Report, PipelineError> {
+        if !self.prefetch_ocr || self.stopped() {
+            return self.run_stages().await;
+        }
+        let runner = self.runner.clone();
+        let execution = self.run_stages();
+        tokio::pin!(execution);
+        // Preparation downloads files only; GPU activation stays inside the normal lane.
+        // Dropping this scoped future cancels unfinished preparation when execution ends.
+        tokio::select! {
+            result = &mut execution => result,
+            prepared = runner.prefetch_ocr() => {
+                if let Err(error) = prepared {
+                    tracing::debug!(%error, "OCR preparation failed; the normal loader will report any failure");
+                }
+                execution.await
+            }
+        }
+    }
+
+    async fn run_stages(mut self) -> std::result::Result<Report, PipelineError> {
         if self.stopped() {
             return Ok(self.report(RunStatus::Stopped));
         }
