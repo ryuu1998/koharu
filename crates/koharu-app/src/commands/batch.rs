@@ -2,6 +2,7 @@ use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 
 use anyhow::{Context as _, Result, ensure};
@@ -281,6 +282,7 @@ async fn process_chapter(
     events: EventSink,
     index: usize,
 ) -> Result<()> {
+    let started = Instant::now();
     let path = chapter.to_owned();
     let pages = tokio_rayon::spawn(move || import::import(vec![path])).await?;
     let count = pages.len();
@@ -317,46 +319,52 @@ async fn process_chapter(
         Ok(())
     })?;
     session.commit(patch).await?;
+    let import_elapsed = started.elapsed();
+    let processing_started = Instant::now();
     let session = Arc::new(tokio::sync::Mutex::new(session));
     let progress = Arc::new(Mutex::new(ChapterProgress::default()));
-    for stage in Stage::ALL {
-        if stop.stopped() {
-            anyhow::bail!("batch stopped");
-        }
-        progress.lock().phase_pages = 0;
-        let progress_state = Arc::clone(&progress);
-        let progress_events = Arc::clone(&events);
-        let callback = Arc::new(move |event| {
-            let mut current = progress_state.lock();
-            current.record(event);
-            progress_events(BatchEvent::ChapterProgress {
-                index,
-                completed_pages: current.phase_pages,
-                total_pages: count,
-                completed_steps: current.finished.len(),
-                total_steps: count * Stage::ALL.len(),
-                stage,
-            });
+    let progress_state = Arc::clone(&progress);
+    let progress_events = Arc::clone(&events);
+    let callback = Arc::new(move |event| {
+        let stage = match &event {
+            Progress::Started { .. } => return,
+            Progress::Loading { stage, .. }
+            | Progress::Running { stage, .. }
+            | Progress::Finished { stage, .. }
+            | Progress::Skipped { stage, .. } => *stage,
+        };
+        let mut current = progress_state.lock();
+        current.record(event);
+        progress_events(BatchEvent::ChapterProgress {
+            index,
+            completed_pages: current.completed(stage),
+            total_pages: count,
+            completed_steps: current.finished.len(),
+            total_steps: count * Stage::ALL.len(),
+            stage,
         });
-        let snapshot = session.lock().await.snapshot();
-        let report = pipeline
-            .execute(
-                snapshot,
-                Request {
-                    operation: Operation::Only { stage },
-                    scope: Scope::Project,
-                    stop: stop.clone(),
-                    progress: Some(callback),
-                    inpainting_mask: None,
-                },
-                &mut SessionCommitter(Arc::clone(&session)),
-            )
-            .await?;
-        ensure!(
-            report.status == RunStatus::Completed && !stop.stopped(),
-            "batch stopped"
-        );
-    }
+    });
+    // One execution preserves the bounded page window and decoded images across stages.
+    let snapshot = session.lock().await.snapshot();
+    let report = pipeline
+        .execute(
+            snapshot,
+            Request {
+                operation: Operation::Full,
+                scope: Scope::Project,
+                stop: stop.clone(),
+                progress: Some(callback),
+                inpainting_mask: None,
+            },
+            &mut SessionCommitter(Arc::clone(&session)),
+        )
+        .await?;
+    ensure!(
+        report.status == RunStatus::Completed && !stop.stopped(),
+        "batch stopped"
+    );
+    let processing_elapsed = processing_started.elapsed();
+    let export_started = Instant::now();
     events(BatchEvent::ChapterExporting { index });
     let path = chapter.to_owned();
     let metadata = tokio_rayon::spawn(move || batch_source::comic_info(&path)).await?;
@@ -370,21 +378,34 @@ async fn process_chapter(
         overwrite,
     )
     .await?;
+    eprintln!(
+        "Batch {}: import {:.2}s, pipeline {:.2}s, export {:.2}s, total {:.2}s",
+        chapter.file_name().unwrap_or_default().to_string_lossy(),
+        import_elapsed.as_secs_f64(),
+        processing_elapsed.as_secs_f64(),
+        export_started.elapsed().as_secs_f64(),
+        started.elapsed().as_secs_f64()
+    );
     Ok(())
 }
 
 #[derive(Default)]
 struct ChapterProgress {
     finished: BTreeSet<(EntityId, Stage)>,
-    phase_pages: usize,
 }
 impl ChapterProgress {
     fn record(&mut self, progress: Progress) {
         if let Progress::Finished { page, stage, .. } | Progress::Skipped { page, stage } = progress
-            && self.finished.insert((page, stage))
         {
-            self.phase_pages += 1;
+            self.finished.insert((page, stage));
         }
+    }
+
+    fn completed(&self, stage: Stage) -> usize {
+        self.finished
+            .iter()
+            .filter(|(_, completed)| *completed == stage)
+            .count()
     }
 }
 
@@ -424,12 +445,19 @@ mod tests {
             stage: Stage::Detection,
         });
         assert_eq!(progress.finished.len(), 1);
-        progress.phase_pages = 0;
         progress.record(Progress::Skipped {
             page,
             stage: Stage::Ocr,
         });
         assert_eq!(progress.finished.len(), 2);
-        assert_eq!(progress.phase_pages, 1);
+        assert_eq!(progress.completed(Stage::Ocr), 1);
+        assert_eq!(progress.completed(Stage::Detection), 1);
+        progress.record(Progress::Running {
+            page,
+            stage: Stage::Detection,
+            model: "detection".to_owned(),
+        });
+        assert_eq!(progress.finished.len(), 2);
+        assert_eq!(progress.completed(Stage::Detection), 1);
     }
 }
