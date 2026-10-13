@@ -261,7 +261,9 @@
     "selectAllLayers": "Selecionar todas as camadas",
     "settings": "Configurações",
     "undo": "Desfazer",
-    "view": "Exibir"
+    "view": "Exibir",
+    "exportCurrentPage": "Current page",
+    "exportProjectFormat": "Entire project as {{format}}"
   },
   "model": {
     "baseUrl": "URL base",

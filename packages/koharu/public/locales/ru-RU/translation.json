@@ -261,7 +261,9 @@
     "selectAllLayers": "Выбрать все слои",
     "settings": "Настройки",
     "undo": "Отменить",
-    "view": "Вид"
+    "view": "Вид",
+    "exportCurrentPage": "Current page",
+    "exportProjectFormat": "Entire project as {{format}}"
   },
   "model": {
     "baseUrl": "Базовый URL",

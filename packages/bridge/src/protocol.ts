@@ -55,7 +55,7 @@ export const commands = {
 	redo: () => __TAURI_INVOKE<null>("redo"),
 	process: (scope: Scope, operation: Operation) => __TAURI_INVOKE<JobId>("process", { scope, operation }),
 	stopJob: (job: JobId) => __TAURI_INVOKE<null>("stop_job", { job }),
-	export: (format: ExportFormat) => __TAURI_INVOKE<null>("export", { format }),
+	export: (request: ExportRequest) => __TAURI_INVOKE<null>("export", { request }),
 	getThumbnail: (page: EntityId) => __TAURI_INVOKE<ThumbnailBytes>("get_thumbnail", { page }),
 	getFonts: () => __TAURI_INVOKE<FontFamily[]>("get_fonts"),
 	getFontPreview: (familyName: string) => __TAURI_INVOKE<FontPreviewBytes>("get_font_preview", { familyName }),
@@ -180,7 +180,7 @@ export type Error = string;
 
 export type Event = { type: "started"; run: RunId } | { type: "text_delta"; run: RunId; delta: string } | { type: "reasoning_delta"; run: RunId; delta: string } | { type: "tool_started"; run: RunId; call_id: string; name: string } | { type: "tool_finished"; run: RunId; call_id: string; name: string; changed: boolean; output: string } | { type: "completed"; run: RunId; message: string } | { type: "failed"; run: RunId; message: string } | { type: "cancelled"; run: RunId };
 
-export type ExportFormat = "png" | "psd" | "cbz";
+export type ExportRequest = { kind: "current_page"; page: EntityId; format: PageExportFormat } | { kind: "entire_project"; format: ProjectExportFormat };
 
 export type Flux2KleinConfig = {
 	prompt?: string,
@@ -356,6 +356,8 @@ export type Page = {
 	regions: AnalysisRegion[],
 };
 
+export type PageExportFormat = "png" | "psd";
+
 export type PageImportSource = { kind: "files" } | { kind: "folder" } | { kind: "paths"; paths: string[] };
 
 export type PageSelection = {
@@ -410,6 +412,8 @@ export type ProcessorConfig = {
 	"flux2-klein"?: Flux2KleinConfig | null,
 	"rorem-mixed"?: RoremMixedConfig | null,
 };
+
+export type ProjectExportFormat = "png" | "psd" | "cbz";
 
 export type ProjectInfo = {
 	name: string,

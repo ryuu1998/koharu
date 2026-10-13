@@ -32,23 +32,42 @@ impl IpcResponse for ThumbnailBytes {
 
 #[derive(Clone, Copy, Debug, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-pub enum ExportFormat {
+pub enum ProjectExportFormat {
     Png,
     Psd,
     Cbz,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PageExportFormat {
+    Png,
+    Psd,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExportRequest {
+    CurrentPage {
+        page: EntityId,
+        format: PageExportFormat,
+    },
+    EntireProject {
+        format: ProjectExportFormat,
+    },
 }
 
 #[tracing::instrument(
     target = "koharu_metrics",
     name = "export",
     skip_all,
-    fields(origin = "user", format = ?format),
+    fields(origin = "user", request = ?request),
 )]
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn export(
     window: WebviewWindow<CefRuntime>,
-    format: ExportFormat,
+    request: ExportRequest,
     project: State<'_, CurrentProject>,
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<(), Error> {
@@ -57,14 +76,42 @@ pub(crate) async fn export(
         let project = project.as_ref().context("no project is open")?;
         (project.name.clone(), project.snapshot())
     };
-    let pages = snapshot.pages().map(|page| page.id()).collect::<Vec<_>>();
+    let (format, current_page) = match request {
+        ExportRequest::CurrentPage { page, format } => (
+            match format {
+                PageExportFormat::Png => ProjectExportFormat::Png,
+                PageExportFormat::Psd => ProjectExportFormat::Psd,
+            },
+            Some(page),
+        ),
+        ExportRequest::EntireProject { format } => (format, None),
+    };
+    let pages = if let Some(page) = current_page {
+        snapshot.page(page)?.page()?;
+        vec![page]
+    } else {
+        snapshot.pages().map(|page| page.id()).collect::<Vec<_>>()
+    };
     if pages.is_empty() {
         return Err(anyhow::anyhow!("there are no pages to export").into());
     }
     let dialog = rfd::AsyncFileDialog::new().set_parent(&window);
-    let destination = match format {
-        ExportFormat::Png | ExportFormat::Psd => dialog.pick_folder().await,
-        ExportFormat::Cbz => {
+    let destination = match (current_page, format) {
+        (Some(page), format) => {
+            let extension = match format {
+                ProjectExportFormat::Png => "png",
+                ProjectExportFormat::Psd => "psd",
+                ProjectExportFormat::Cbz => unreachable!(),
+            };
+            let label = page_stem(&snapshot.page(page)?.page()?.label);
+            dialog
+                .add_filter(extension.to_uppercase(), &[extension])
+                .set_file_name(format!("{label}.{extension}"))
+                .save_file()
+                .await
+        }
+        (None, ProjectExportFormat::Png | ProjectExportFormat::Psd) => dialog.pick_folder().await,
+        (None, ProjectExportFormat::Cbz) => {
             dialog
                 .add_filter("Comic Book Archive", &["cbz"])
                 .set_file_name(format!("{name}.cbz"))
@@ -75,11 +122,18 @@ pub(crate) async fn export(
     let Some(destination) = destination.map(|destination| destination.path().to_owned()) else {
         return Ok(());
     };
+    let destination = if current_page.is_none() && !matches!(format, ProjectExportFormat::Cbz) {
+        let directory = destination.join(name);
+        tokio::fs::create_dir_all(&directory).await?;
+        directory
+    } else {
+        destination
+    };
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
     let frames = try_join_all(pages.iter().map(|&page| renderer.render(&snapshot, page))).await?;
     let (extension, images) = match format {
-        ExportFormat::Png | ExportFormat::Cbz => {
+        ProjectExportFormat::Png | ProjectExportFormat::Cbz => {
             let images = tokio_rayon::spawn(move || {
                 frames
                     .par_iter()
@@ -106,7 +160,7 @@ pub(crate) async fn export(
             .await?;
             ("png", images)
         }
-        ExportFormat::Psd => {
+        ProjectExportFormat::Psd => {
             let options = PsdExportOptions::default();
             let images = try_join_all(
                 frames
@@ -118,7 +172,7 @@ pub(crate) async fn export(
         }
     };
     tokio_rayon::spawn(move || -> Result<()> {
-        let mut archive = if matches!(format, ExportFormat::Cbz) {
+        let mut archive = if matches!(format, ProjectExportFormat::Cbz) {
             let directory = destination.parent().context("archive path has no parent")?;
             Some(zip::ZipWriter::new(tempfile::NamedTempFile::new_in(
                 directory,
@@ -130,25 +184,16 @@ pub(crate) async fn export(
         // Async preparation and indexed encoding both preserve project order.
         for (index, (page_id, bytes)) in pages.into_iter().zip(images).enumerate() {
             let page = snapshot.page(page_id)?.page()?;
-            let name = page
-                .label
-                .trim()
-                .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
-            let name = name
-                .rsplit_once('.')
-                .map_or(name, |(stem, _)| stem)
-                .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
-            let name = format!(
-                "{:0width$}_{}.{extension}",
-                index + 1,
-                if name.is_empty() { "page" } else { &name }
-            );
+            let stem = page_stem(&page.label);
+            let name = format!("{:0width$}_{stem}.{extension}", index + 1);
             if let Some(archive) = &mut archive {
                 // PNG data is already compressed.
                 let options = zip::write::SimpleFileOptions::default()
                     .compression_method(zip::CompressionMethod::Stored);
                 archive.start_file(name, options)?;
                 archive.write_all(&bytes)?;
+            } else if current_page.is_some() {
+                std::fs::write(&destination, bytes)?;
             } else {
                 std::fs::write(destination.join(name), bytes)?;
             }
@@ -165,6 +210,45 @@ pub(crate) async fn export(
     })
     .await?;
     Ok(())
+}
+
+fn page_stem(label: &str) -> String {
+    let label = label
+        .trim()
+        .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
+    let label = label.rsplit_once('.').map_or(label, |(stem, _)| stem);
+    let stem = label
+        .chars()
+        .map(|character| {
+            if character.is_control()
+                || matches!(
+                    character,
+                    '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                )
+            {
+                '_'
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    if stem.is_empty() {
+        "page".to_owned()
+    } else {
+        stem
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_filenames_remove_extensions_and_path_characters() {
+        assert_eq!(page_stem("page: 2/3.png"), "page_ 2_3");
+        assert_eq!(page_stem("  ...  "), "page");
+        assert_eq!(page_stem("front.page.png"), "front.page");
+    }
 }
 
 #[tauri::command]

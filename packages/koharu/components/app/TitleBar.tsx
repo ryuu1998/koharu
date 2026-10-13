@@ -118,13 +118,30 @@ export function TitleBar() {
                   {t('menu.export')}
                 </MenubarSubTrigger>
                 <MenubarSubContent className='min-w-40 p-1'>
+                  <div role='group' aria-label={t('menu.exportCurrentPage')}>
+                    <div className='px-2 py-1 text-[10px] text-muted-foreground'>
+                      {t('menu.exportCurrentPage')}
+                    </div>
+                    {(['png', 'psd'] as const).map((format) => (
+                      <MenubarItem
+                        key={format}
+                        disabled={!page || exporting}
+                        onClick={() =>
+                          page && exportProject({ kind: 'current_page', page: page.id, format })
+                        }
+                      >
+                        {format.toUpperCase()}…
+                      </MenubarItem>
+                    ))}
+                  </div>
+                  <MenubarSeparator />
                   {(['png', 'psd', 'cbz'] as const).map((format) => (
                     <MenubarItem
                       key={format}
                       disabled={exporting}
-                      onClick={() => exportProject(format)}
+                      onClick={() => exportProject({ kind: 'entire_project', format })}
                     >
-                      {format.toUpperCase()}…
+                      {t('menu.exportProjectFormat', { format: format.toUpperCase() })}…
                     </MenubarItem>
                   ))}
                 </MenubarSubContent>

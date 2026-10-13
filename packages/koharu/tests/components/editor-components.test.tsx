@@ -360,10 +360,12 @@ describe('greenfield editor', () => {
       expect(screen.queryByRole('complementary', { name: 'Activity' })).not.toBeInTheDocument()
       await user.click(screen.getByRole('menuitem', { name: 'File' }))
       await user.hover(await screen.findByRole('menuitem', { name: 'Export Project' }))
-      fireEvent.click(await screen.findByRole('menuitem', { name: `${format.toUpperCase()}…` }))
+      fireEvent.click(
+        await screen.findByRole('menuitem', { name: `Entire project as ${format.toUpperCase()}…` }),
+      )
 
       expect(await screen.findByRole('status')).toHaveTextContent('Export Project')
-      expect(exportProject).toHaveBeenCalledExactlyOnceWith(format)
+      expect(exportProject).toHaveBeenCalledExactlyOnceWith({ kind: 'entire_project', format })
       await user.click(screen.getByRole('menuitem', { name: 'File' }))
       expect(await screen.findByRole('menuitem', { name: 'Export Project' })).toHaveAttribute(
         'aria-disabled',
@@ -383,7 +385,12 @@ describe('greenfield editor', () => {
 
   it.each([
     { command: 'import', menu: 'Import Pages', choice: 'Files…', pending: 'Importing pages…' },
-    { command: 'export', menu: 'Export Project', choice: 'CBZ…', pending: 'Export Project' },
+    {
+      command: 'export',
+      menu: 'Export Project',
+      choice: 'Entire project as CBZ…',
+      pending: 'Export Project',
+    },
   ] as const)(
     'clears $command activity after failure',
     async ({ command, menu, choice, pending }) => {
@@ -419,6 +426,24 @@ describe('greenfield editor', () => {
       )
     },
   )
+
+  it('exports the current page independently of the whole project', async () => {
+    const user = userEvent.setup()
+    installProject()
+    const exportPage = vi.spyOn(commands, 'export').mockResolvedValue(null)
+    render(<TitleBar />)
+    await user.click(screen.getByRole('menuitem', { name: 'File' }))
+    await user.hover(await screen.findByRole('menuitem', { name: 'Export Project' }))
+    expect(await screen.findByRole('group', { name: 'Current page' })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'PNG…' }))
+    await waitFor(() =>
+      expect(exportPage).toHaveBeenCalledExactlyOnceWith({
+        kind: 'current_page',
+        page: 'page',
+        format: 'png',
+      }),
+    )
+  })
 
   it('opens community links through the Tauri opener plugin', async () => {
     nativeOpenUrl.mockClear()
