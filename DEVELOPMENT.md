@@ -21,6 +21,10 @@ reported instead of stopping another development session.
 Frontend logs are in `.local-git/dev`. Native logs remain in the launch terminal.
 The debug CEF inspection endpoint is `http://127.0.0.1:4000`.
 
+The first launch of a new upstream version can show **Preparing Koharu** while
+its native AI runtime packages are downloaded and installed into the user cache.
+This is separate from compilation; later launches reuse those installed packages.
+
 You can also run `"Koharu Dev.bat" 1` or `"Koharu Dev.bat" 2` from a command prompt.
 
 ## Headless chapter translation
