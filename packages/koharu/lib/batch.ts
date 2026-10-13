@@ -17,29 +17,38 @@ interface BatchStore {
   source: BatchSource | null
   output: string | null
   selected: string[]
+  exported: string[]
   running: boolean
   stopping: boolean
   activeName: string | null
   activePath: string | null
   progress: Extract<BatchEvent, { event: 'chapter_progress' }> | null
+  stages: Partial<
+    Record<
+      Extract<BatchEvent, { event: 'chapter_progress' }>['stage'],
+      Extract<BatchEvent, { event: 'chapter_progress' }>
+    >
+  >
   completedChapters: number
   totalChapters: number
   statuses: Record<string, ChapterStatus>
   report: BatchReport | null
   setSource: (source: BatchSource) => void
-  setOutput: (output: string) => void
+  setOutput: (output: string) => Promise<void>
   select: (paths: string[]) => void
 }
 
-export const useBatchStore = create<BatchStore>()((set) => ({
+export const useBatchStore = create<BatchStore>()((set, get) => ({
   source: null,
   output: null,
   selected: [],
+  exported: [],
   running: false,
   stopping: false,
   activeName: null,
   activePath: null,
   progress: null,
+  stages: {},
   completedChapters: 0,
   totalChapters: 0,
   statuses: {},
@@ -48,12 +57,34 @@ export const useBatchStore = create<BatchStore>()((set) => ({
     set({
       source,
       output: source.default_output,
-      selected: source.chapters.filter((chapter) => !chapter.error).map((chapter) => chapter.path),
+      selected: source.chapters
+        .filter((chapter) => !chapter.error && !source.exported.includes(chapter.path))
+        .map((chapter) => chapter.path),
+      exported: source.exported,
       report: null,
       progress: null,
+      stages: {},
       statuses: {},
     }),
-  setOutput: (output) => set({ output }),
+  setOutput: async (output) => {
+    const source = get().source
+    if (!source) return
+    const exported = await call(
+      commands.getBatchExports,
+      source.chapters.map((chapter) => chapter.path),
+      output,
+    )
+    if (get().source !== source) return
+    set({
+      output,
+      exported,
+      statuses: {},
+      report: null,
+      selected: source.chapters
+        .filter((chapter) => !chapter.error && !exported.includes(chapter.path))
+        .map((chapter) => chapter.path),
+    })
+  },
   select: (selected) => set({ selected: [...new Set(selected)] }),
 }))
 
@@ -69,6 +100,7 @@ export async function startBatch(): Promise<void> {
     stopping: false,
     report: null,
     progress: null,
+    stages: {},
     activeName: null,
     activePath: null,
     statuses: {},
@@ -78,7 +110,11 @@ export async function startBatch(): Promise<void> {
   try {
     const events = new Channel<BatchEvent>((event) => {
       if (event.event === 'started') useBatchStore.setState({ totalChapters: event.total_chapters })
-      else if (event.event === 'chapter_progress') useBatchStore.setState({ progress: event })
+      else if (event.event === 'chapter_progress')
+        useBatchStore.setState((state) => ({
+          progress: event,
+          stages: { ...state.stages, [event.stage]: event },
+        }))
       else if (event.event === 'finished') useBatchStore.setState({ report: event.report })
       else {
         const path = chapters[event.index]
@@ -88,6 +124,7 @@ export async function startBatch(): Promise<void> {
             activeName: event.name,
             activePath: path,
             progress: null,
+            stages: {},
             statuses: { ...state.statuses, [path]: 'running' },
           }))
         } else if (event.event === 'chapter_exporting') {
@@ -104,6 +141,8 @@ export async function startBatch(): Promise<void> {
           useBatchStore.setState((state) => ({
             completedChapters: state.completedChapters + 1,
             statuses: { ...state.statuses, [path]: status },
+            exported:
+              status === 'translated' ? [...new Set([...state.exported, path])] : state.exported,
           }))
         }
       }
@@ -122,7 +161,12 @@ export async function startBatch(): Promise<void> {
           statuses[path] = state.report?.stopped ? 'stopped' : 'failed'
         }
       }
-      return { running: false, stopping: false, statuses }
+      return {
+        running: false,
+        stopping: false,
+        statuses,
+        selected: state.selected.filter((path) => !state.exported.includes(path)),
+      }
     })
   }
 }

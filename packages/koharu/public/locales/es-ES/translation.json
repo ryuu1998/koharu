@@ -541,7 +541,6 @@
   "batch": {
     "tab": "Batch",
     "title": "Batch translation",
-    "description": "Translate chapters with your saved settings.",
     "folders": "Batch folders",
     "source": "Source folder",
     "output": "Export folder",
@@ -558,7 +557,6 @@
     "emptyFolderHint": "Choose another folder. Only CBZ files in this folder are included.",
     "ready": "Ready",
     "pages": "{{count}} pages",
-    "exportHint": "Exports keep chapter filenames, use quality-95 JPEG pages, and skip existing archives.",
     "translate": "Translate {{count}} chapters",
     "translate_one": "Translate {{count}} chapter",
     "translate_other": "Translate {{count}} chapters",
@@ -574,6 +572,9 @@
     "translated": "Translated",
     "skipped": "Skipped existing output",
     "failed": "Failed",
-    "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed."
+    "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed.",
+    "alreadyTranslated": "Already translated",
+    "showDetails": "Expand active chapter",
+    "hideDetails": "Collapse active chapter"
   }
 }

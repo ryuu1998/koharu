@@ -43,10 +43,12 @@ beforeEach(() =>
     source: null,
     output: null,
     selected: [],
+    exported: [],
     running: false,
     stopping: false,
     report: null,
     progress: null,
+    stages: {},
     activeName: null,
     activePath: null,
     statuses: {},
@@ -56,6 +58,23 @@ beforeEach(() =>
 )
 
 describe('batch chapter browser', () => {
+  it('marks previous exports and updates selection for a different output folder', async () => {
+    useBatchStore.getState().setSource({ ...source, exported: [source.chapters[0].path] })
+    const check = vi.spyOn(commands, 'getBatchExports').mockResolvedValue([])
+    render(<BatchPage />)
+    expect(screen.getByText('Already translated')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeDisabled()
+    expect(useBatchStore.getState().selected).toEqual([])
+    await useBatchStore.getState().setOutput('D:\\Translated')
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeEnabled(),
+    )
+    expect(check).toHaveBeenCalledWith(
+      source.chapters.map((chapter) => chapter.path),
+      'D:\\Translated',
+    )
+    expect(useBatchStore.getState().selected).toEqual([source.chapters[0].path])
+  })
   it('selects healthy chapters and leaves corrupt archives disabled', async () => {
     vi.spyOn(commands, 'browseBatchSource').mockResolvedValue(source)
     render(<BatchPage />)
@@ -64,7 +83,10 @@ describe('batch chapter browser', () => {
       expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeChecked(),
     )
     expect(screen.getByRole('checkbox', { name: 'broken.cbz' })).toBeDisabled()
-    expect(screen.getByText('C:\\Manga\\Translated')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Choose export folder' })).toHaveAttribute(
+      'title',
+      expect.stringContaining('C:\\Manga\\Translated'),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(useBatchStore.getState().selected).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
@@ -113,6 +135,14 @@ describe('batch chapter browser', () => {
     })
     expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeDisabled()
     expect(screen.getByRole('progressbar', { name: 'Batch progress' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse active chapter' }))
+    expect(screen.getByRole('button', { name: 'Expand active chapter' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('progressbar', { name: 'Detection' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand active chapter' }))
+    expect(screen.getByRole('progressbar', { name: 'Detection' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     await waitFor(() => expect(stop).toHaveBeenCalledOnce())
     expect(screen.getByRole('button', { name: 'Stopping…' })).toBeDisabled()
