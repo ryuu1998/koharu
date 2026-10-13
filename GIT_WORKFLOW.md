@@ -171,7 +171,29 @@ tags. Keep those tags local: the inherited release workflow runs on **any pushed
 tag**, so `git push --tags` can unintentionally launch releases. GitHub backup
 branches preserve the baseline and previous work without pushing those tags.
 
-## Next: restore the previous features
+## Review the restoration stack
+
+The restoration PRs are stacked: each targets the preceding feature branch so its
+diff contains only that step. The latest local branch includes the whole stack.
+Accept them from the bottom upward, starting with #4. Do not merge a child PR
+into its parent feature branch.
+
+After squash-merging an earlier PR into `v2/main`, update the next PR's branch
+by merging `origin/v2/main` into it, push normally, and change that PR's base to
+`v2/main`. Check its diff before accepting it. This preserves published branch
+history while avoiding a force push after squash merging. Repeat for each step.
+
+For example, after accepting #4:
+
+```powershell
+git fetch origin
+git switch chore/dev-launcher
+git merge origin/v2/main
+git push
+gh pr edit 5 --repo ryuu1998/koharu --base v2/main
+```
+
+## Restored features
 
 See [PREVIOUS_CHANGES.md](PREVIOUS_CHANGES.md) for the exact commits and restoration
 order. Each restored feature gets a separate PR against the updated architecture.

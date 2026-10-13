@@ -1,11 +1,20 @@
 'use client'
 
-import { ArrowLeft, FileArchive, FolderOpen, LoaderCircle, Settings } from 'lucide-react'
+import {
+  ArrowLeft,
+  FileArchive,
+  FolderOpen,
+  LoaderCircle,
+  Play,
+  Settings,
+  Square,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { BatchProgress } from '@/components/batch/BatchProgress'
 import { call } from '@/lib/backend'
-import { useBatchStore } from '@/lib/batch'
+import { startBatch, stopBatch, useBatchStore } from '@/lib/batch'
 import { useKoharuStore } from '@/lib/store'
 import { commands } from '@koharu/bridge/protocol'
 import { Button } from '@koharu/ui/components/button'
@@ -13,14 +22,22 @@ import { cn } from '@koharu/ui/lib/utils'
 
 export function BatchPage() {
   const { t } = useTranslation()
-  const { source, output, selected, setSource, setOutput, select } = useBatchStore()
+  const source = useBatchStore((state) => state.source)
+  const output = useBatchStore((state) => state.output)
+  const selected = useBatchStore((state) => state.selected)
+  const setSource = useBatchStore((state) => state.setSource)
+  const setOutput = useBatchStore((state) => state.setOutput)
+  const select = useBatchStore((state) => state.select)
+  const running = useBatchStore((state) => state.running)
+  const stopping = useBatchStore((state) => state.stopping)
+  const statuses = useBatchStore((state) => state.statuses)
   const setWorkspace = useKoharuStore((state) => state.setWorkspace)
   const [busy, setBusy] = useState<'source' | 'output' | null>(null)
   const chapters = source?.chapters ?? []
   const healthy = chapters.filter((chapter) => !chapter.error)
 
   const browseSource = async () => {
-    if (busy) return
+    if (busy || running) return
     setBusy('source')
     try {
       const source = await call(commands.browseBatchSource)
@@ -30,7 +47,7 @@ export function BatchPage() {
     }
   }
   const browseOutput = async () => {
-    if (busy) return
+    if (busy || running) return
     setBusy('output')
     try {
       const output = await call(commands.browseBatchOutput)
@@ -62,6 +79,7 @@ export function BatchPage() {
             variant='ghost'
             size='sm'
             className='gap-1.5 text-xs text-muted-foreground'
+            disabled={running}
             onClick={() => setWorkspace('settings')}
           >
             <Settings className='size-3.5' />
@@ -79,7 +97,7 @@ export function BatchPage() {
               path: source?.path,
               action: browseSource,
               pending: busy === 'source',
-              disabled: !!busy,
+              disabled: !!busy || running,
               title: t('batch.chooseSource'),
             },
             {
@@ -87,7 +105,7 @@ export function BatchPage() {
               path: output,
               action: browseOutput,
               pending: busy === 'output',
-              disabled: !!busy || !source,
+              disabled: !!busy || running || !source,
               title: t('batch.chooseOutput'),
             },
           ].map((folder) => (
@@ -138,7 +156,7 @@ export function BatchPage() {
                 variant='ghost'
                 size='sm'
                 className='h-7 text-[11px]'
-                disabled={!!busy || !healthy.length}
+                disabled={!!busy || running || !healthy.length}
                 onClick={() => select(healthy.map((chapter) => chapter.path))}
               >
                 {t('batch.selectAll')}
@@ -147,11 +165,37 @@ export function BatchPage() {
                 variant='ghost'
                 size='sm'
                 className='h-7 text-[11px]'
-                disabled={!!busy || !selected.length}
+                disabled={!!busy || running || !selected.length}
                 onClick={() => select([])}
               >
                 {t('batch.clear')}
               </Button>
+              {running ? (
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='ml-2 h-7 gap-1.5 text-[11px]'
+                  disabled={stopping}
+                  onClick={() => void stopBatch().catch(() => undefined)}
+                >
+                  {stopping ? (
+                    <LoaderCircle className='size-3 animate-spin' aria-hidden='true' />
+                  ) : (
+                    <Square className='size-3' aria-hidden='true' />
+                  )}
+                  {t(stopping ? 'batch.stopping' : 'activity.stop')}
+                </Button>
+              ) : (
+                <Button
+                  size='sm'
+                  className='ml-2 h-7 gap-1.5 text-[11px] text-[#1f080c]'
+                  disabled={!!busy || !selected.length || !output}
+                  onClick={() => void startBatch().catch(() => undefined)}
+                >
+                  <Play className='size-3' aria-hidden='true' />
+                  {t('batch.translate', { count: selected.length })}
+                </Button>
+              )}
             </div>
           </div>
           {chapters.length === 0 ? (
@@ -183,7 +227,7 @@ export function BatchPage() {
                   <input
                     type='checkbox'
                     checked={selected.includes(chapter.path)}
-                    disabled={!!busy || !!chapter.error}
+                    disabled={!!busy || running || !!chapter.error}
                     aria-label={chapter.name}
                     className='size-3.5 shrink-0 accent-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
                     onChange={(event) =>
@@ -213,11 +257,18 @@ export function BatchPage() {
                     <span
                       className={cn(
                         'mt-1 block truncate text-[11px]',
-                        chapter.error ? 'text-destructive' : 'text-muted-foreground',
+                        chapter.error || statuses[chapter.path] === 'failed'
+                          ? 'text-destructive'
+                          : 'text-muted-foreground',
                       )}
                       title={chapter.error ?? undefined}
                     >
-                      {chapter.error ?? t('batch.ready')}
+                      {chapter.error ??
+                        t(
+                          statuses[chapter.path]
+                            ? `batch.${statuses[chapter.path]}`
+                            : 'batch.ready',
+                        )}
                     </span>
                   </span>
                   <span className='w-20 text-right text-[11px] text-muted-foreground tabular-nums'>
@@ -234,6 +285,7 @@ export function BatchPage() {
             </div>
           )}
         </section>
+        <BatchProgress />
         <p className='mt-3 shrink-0 text-[10px] text-muted-foreground'>{t('batch.exportHint')}</p>
       </div>
     </main>

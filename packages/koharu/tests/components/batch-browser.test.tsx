@@ -5,6 +5,14 @@ import { BatchPage } from '@/components/batch/BatchPage'
 import { useBatchStore } from '@/lib/batch'
 import { useKoharuStore } from '@/lib/store'
 import { commands, type BatchSource } from '@koharu/bridge/protocol'
+import type { BatchEvent, BatchReport } from '@koharu/bridge/protocol'
+
+vi.mock('@tauri-apps/api/core', async (original) => ({
+  ...(await original<typeof import('@tauri-apps/api/core')>()),
+  Channel: class {
+    constructor(public onmessage: (event: BatchEvent) => void) {}
+  },
+}))
 
 const source: BatchSource = {
   path: 'C:\\Manga',
@@ -29,7 +37,22 @@ const source: BatchSource = {
   ],
 }
 
-beforeEach(() => useBatchStore.setState({ source: null, output: null, selected: [] }))
+beforeEach(() =>
+  useBatchStore.setState({
+    source: null,
+    output: null,
+    selected: [],
+    running: false,
+    stopping: false,
+    report: null,
+    progress: null,
+    activeName: null,
+    activePath: null,
+    statuses: {},
+    completedChapters: 0,
+    totalChapters: 0,
+  }),
+)
 
 describe('batch chapter browser', () => {
   it('selects healthy chapters and leaves corrupt archives disabled', async () => {
@@ -56,5 +79,46 @@ describe('batch chapter browser', () => {
     useKoharuStore.getState().closeSettings()
     expect(useKoharuStore.getState().workspace).toBe('batch')
     expect(useBatchStore.getState().source).toEqual(source)
+  })
+
+  it('starts only selected healthy chapters and keeps stop active until completion', async () => {
+    useBatchStore.getState().setSource(source)
+    let finish: ((report: BatchReport) => void) | undefined
+    const run = vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
+      channel.onmessage({ event: 'started', total_chapters: 1 })
+      channel.onmessage({ event: 'chapter_started', index: 0, name: 'chapter1.cbz', pages: 32 })
+      channel.onmessage({
+        event: 'chapter_progress',
+        index: 0,
+        completed_pages: 8,
+        total_pages: 32,
+        completed_steps: 8,
+        total_steps: 128,
+        stage: 'detection',
+      })
+      return new Promise<BatchReport>((resolve) => {
+        finish = resolve
+      })
+    })
+    const stop = vi.spyOn(commands, 'stopBatch').mockResolvedValue(null)
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Translate 1 chapter' }))
+    await waitFor(() => expect(run).toHaveBeenCalledOnce())
+    expect(run.mock.calls[0][0]).toEqual({
+      chapters: ['C:\\Manga\\chapter1.cbz'],
+      output: 'C:\\Manga\\Translated',
+      jpeg_quality: 95,
+      overwrite: false,
+    })
+    expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeDisabled()
+    expect(screen.getByRole('progressbar', { name: 'Batch progress' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(stop).toHaveBeenCalledOnce())
+    expect(screen.getByRole('button', { name: 'Stopping…' })).toBeDisabled()
+    finish?.({ completed: 0, skipped: 0, failures: [], stopped: true })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Translate 1 chapter' })).toBeEnabled(),
+    )
+    expect(useBatchStore.getState().report?.stopped).toBe(true)
   })
 })

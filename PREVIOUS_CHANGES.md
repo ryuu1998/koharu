@@ -1,4 +1,4 @@
-# Previous changes to restore
+# Previous changes and V2 restoration
 
 The V2 baseline is original Koharu commit
 `521e20ca965eec7fe2498f4ddc25babd4d77f167`, verified against the downloaded source
@@ -28,11 +28,29 @@ replay the old upstream merge commits. Cherry-pick can carry a patch forward,
 but conflicts must be adapted to the current architecture. Use
 `git cherry-pick --abort` to cancel an unsuccessful replay.
 
-For each restoration, compare current behavior, port missing behavior, regenerate
-derived bridge bindings from their authoritative inputs, and run the smallest
-relevant debug checks. Keep export options and their CBZ optimization together
-when they share an ownership boundary. Port the batch workspace before its
-dependent optimization commit.
+The published features have been adapted to the current architecture in separate
+draft PRs. Generated bridge bindings were regenerated from Rust, and focused debug
+checks cover the affected behavior. The latest local branch includes every step.
+
+| V2 PR | Scope |
+| --- | --- |
+| [#5](https://github.com/ryuu1998/koharu/pull/5) | Saved debug launcher and frontend hot reload |
+| [#6](https://github.com/ryuu1998/koharu/pull/6) | Native drag-and-drop imports |
+| [#7](https://github.com/ryuu1998/koharu/pull/7) | Current-page and project export choices |
+| [#8](https://github.com/ryuu1998/koharu/pull/8) | Compact CBZ and bounded project exports |
+| [#9](https://github.com/ryuu1998/koharu/pull/9) | Batch folder discovery and chapter covers |
+| [#10](https://github.com/ryuu1998/koharu/pull/10) | Isolated native batch processing and cancellation |
+| [#11](https://github.com/ryuu1998/koharu/pull/11) | Headless batch CLI |
+| [#12](https://github.com/ryuu1998/koharu/pull/12) | Batch browser redesign and workspace navigation |
+| [#13](https://github.com/ryuu1998/koharu/pull/13) | Batch run/stop controls, chapter status, and progress |
+
+PRs remain unmerged. Follow the bottom-up acceptance instructions in
+[GIT_WORKFLOW.md](GIT_WORKFLOW.md). Existing upstream archive decoding, settings,
+and model lifecycle are reused rather than copying the older implementations.
+
+The unpublished optimization commit `ee0de0a6` remains saved on
+`archive/previous-batch`. Its additional retry/concurrency and model changes need
+separate review and device measurements; they are not part of this restoration.
 
 The old PR #3 continues to target the old `main`. Create replacement V2 PRs;
 leave the old PR and its branch intact until the replacements are accepted.

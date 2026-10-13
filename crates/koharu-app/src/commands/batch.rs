@@ -135,10 +135,12 @@ pub(crate) async fn process_batch(
     let stop = StopToken::default();
     {
         let mut stops = processing.stops.lock();
-        if !stops.is_empty() {
+        let mut active = batch.stop.lock();
+        // Project replacement can clear the shared stop map before cancellation finishes.
+        if !stops.is_empty() || active.is_some() {
             return Err(anyhow::anyhow!("another process is already running").into());
         }
-        *batch.stop.lock() = Some(stop.clone());
+        *active = Some(stop.clone());
         stops.insert(job, stop.clone());
     }
     let _guard = BatchGuard {

@@ -558,6 +558,22 @@
     "emptyFolderHint": "Choose another folder. Only CBZ files in this folder are included.",
     "ready": "Ready",
     "pages": "{{count}} pages",
-    "exportHint": "Exports keep chapter filenames, use quality-95 JPEG pages, and skip existing archives."
+    "exportHint": "Exports keep chapter filenames, use quality-95 JPEG pages, and skip existing archives.",
+    "translate": "Translate {{count}} chapters",
+    "translate_one": "Translate {{count}} chapter",
+    "translate_other": "Translate {{count}} chapters",
+    "progress": "Batch progress",
+    "chapterProgress": "Chapter progress",
+    "pageProgress": "{{count}} / {{total}} pages",
+    "chapterCount": "{{count}} / {{total}} chapters",
+    "starting": "Starting batch",
+    "stopping": "Stopping…",
+    "stopped": "Stopped.",
+    "running": "Translating",
+    "exporting": "Exporting",
+    "translated": "Translated",
+    "skipped": "Skipped existing output",
+    "failed": "Failed",
+    "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed."
   }
 }

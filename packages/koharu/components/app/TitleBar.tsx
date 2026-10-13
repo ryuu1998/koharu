@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { AboutDialog } from '@/components/app/AboutDialog'
 import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
 import { call } from '@/lib/backend'
+import { useBatchStore } from '@/lib/batch'
 import { selectableLayer } from '@/lib/geometry'
 import {
   pageKey,
@@ -52,6 +53,7 @@ export function TitleBar() {
   const selectLayers = useKoharuStore((state) => state.selectLayers)
   const setWorkspace = useKoharuStore((state) => state.setWorkspace)
   const workspace = useKoharuStore((state) => state.workspace)
+  const batchRunning = useBatchStore((state) => state.running)
   const requestCanvasFit = useKoharuStore((state) => state.requestCanvasFit)
   const { importPages, importing } = useImportPages()
   const { run: exportProject, busy: exporting } = useCommand(
@@ -153,7 +155,7 @@ export function TitleBar() {
                 {t('menu.closeProject')}
               </MenubarItem>
               <MenubarSeparator />
-              <MenubarItem onClick={() => setWorkspace('settings')}>
+              <MenubarItem disabled={batchRunning} onClick={() => setWorkspace('settings')}>
                 <Settings />
                 {t('menu.settings')}
               </MenubarItem>
