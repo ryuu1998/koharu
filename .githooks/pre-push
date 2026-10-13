@@ -1,0 +1,10 @@
+#!/bin/sh
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/v2/main)
+      echo "Direct pushes to $remote_ref are blocked. Use a pull request." >&2
+      exit 1
+      ;;
+  esac
+done

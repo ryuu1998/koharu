@@ -57,3 +57,7 @@ test-results/
 # Local documentation output
 /packages/docs/.mintlify/
 /packages/docs/site/
+
+# Local Git recovery bundles and scratch metadata
+/.git-backups/
+/.local-git/
