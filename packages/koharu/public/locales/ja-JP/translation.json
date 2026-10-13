@@ -298,7 +298,10 @@
     "rename": "名前を変更",
     "renameDescription": "このページの新しい名前を入力します。",
     "renameTitle": "ページ名を変更",
-    "selected": "{{count}}件選択中"
+    "selected": "{{count}}件選択中",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "翻訳指示",

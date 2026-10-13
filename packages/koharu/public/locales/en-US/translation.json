@@ -298,7 +298,10 @@
     "rename": "Rename",
     "renameDescription": "Choose a new name for this page.",
     "renameTitle": "Rename page",
-    "selected": "{{count}} selected"
+    "selected": "{{count}} selected",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "Translation instructions",

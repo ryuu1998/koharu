@@ -298,7 +298,10 @@
     "rename": "Yeniden adlandır",
     "renameDescription": "Bu sayfa için yeni bir ad seçin.",
     "renameTitle": "Sayfayı yeniden adlandır",
-    "selected": "{{count}} seçili"
+    "selected": "{{count}} seçili",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "Çeviri talimatları",

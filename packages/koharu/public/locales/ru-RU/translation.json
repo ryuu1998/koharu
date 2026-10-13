@@ -298,7 +298,10 @@
     "rename": "Переименовать",
     "renameDescription": "Выберите новое имя для страницы.",
     "renameTitle": "Переименовать страницу",
-    "selected": "Выбрано: {{count}}"
+    "selected": "Выбрано: {{count}}",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "Инструкции по переводу",

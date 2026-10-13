@@ -8,6 +8,7 @@ Document only durable, repository-specific constraints here. Do not record curre
 - Prefer a coherent ownership redesign over aliases, forwarding layers, compatibility parsers, or cosmetic renaming.
 - Keep responsibilities self-contained. Defaults and provider-specific behavior belong to the component that owns them rather than a central list of special cases.
 - Remove dead abstractions and one-use helpers when direct code is clearer.
+- Restore and optimize this fork in small PRs, one behavior or ownership layer at a time. Keep native batch orchestration, UI redesign, and independent performance changes separately reviewable.
 
 ## Source Boundaries
 

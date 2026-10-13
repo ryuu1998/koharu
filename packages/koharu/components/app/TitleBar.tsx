@@ -98,11 +98,11 @@ export function TitleBar() {
                   {importing ? t('navigator.importing') : t('menu.import')}
                 </MenubarSubTrigger>
                 <MenubarSubContent className='min-w-40 p-1'>
-                  <MenubarItem disabled={importing} onClick={() => importPages('files')}>
+                  <MenubarItem disabled={importing} onClick={() => importPages({ kind: 'files' })}>
                     <FilePlus2 />
                     {t('navigator.importFiles')}
                   </MenubarItem>
-                  <MenubarItem disabled={importing} onClick={() => importPages('folder')}>
+                  <MenubarItem disabled={importing} onClick={() => importPages({ kind: 'folder' })}>
                     <FolderOpen />
                     {t('navigator.importFolder')}
                   </MenubarItem>

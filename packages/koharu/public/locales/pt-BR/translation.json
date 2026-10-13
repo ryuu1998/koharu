@@ -298,7 +298,10 @@
     "rename": "Renomear",
     "renameDescription": "Escolha um novo nome para esta página.",
     "renameTitle": "Renomear página",
-    "selected": "{{count}} selecionadas"
+    "selected": "{{count}} selecionadas",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "Instruções de tradução",
