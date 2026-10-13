@@ -22,3 +22,17 @@ Frontend logs are in `.local-git/dev`. Native logs remain in the launch terminal
 The debug CEF inspection endpoint is `http://127.0.0.1:4000`.
 
 You can also run `"Koharu Dev.bat" 1` or `"Koharu Dev.bat" 2` from a command prompt.
+
+## Headless chapter translation
+
+The same debug executable can translate a CBZ file or a folder of chapters:
+
+```powershell
+.\target\debug\koharu.exe batch "C:\Manga" --output "C:\Translated"
+```
+
+It uses saved Koharu settings, skips existing outputs, and preserves source files.
+Use `--cpu` for CPU model inference, `--jpeg-quality 95` to choose JPEG quality,
+and `--overwrite` only when replacing existing translated outputs is intentional.
+Ctrl+C requests a cooperative stop. The command exits with a failure status when
+chapters fail, and with status 130 when stopped.

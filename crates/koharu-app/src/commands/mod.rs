@@ -1,5 +1,6 @@
 pub(crate) mod agent;
 pub(crate) mod batch;
+pub(crate) mod batch_cli;
 pub(crate) mod batch_source;
 pub(crate) mod canvas;
 pub(crate) mod editing;
