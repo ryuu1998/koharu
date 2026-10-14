@@ -62,7 +62,7 @@ describe('batch chapter browser', () => {
     useBatchStore.getState().setSource({ ...source, exported: [source.chapters[0].path] })
     const check = vi.spyOn(commands, 'getBatchExports').mockResolvedValue([])
     render(<BatchPage />)
-    expect(screen.getByText('Already translated')).toBeInTheDocument()
+    expect(screen.getByText('Translated')).toHaveAttribute('title', 'Already translated')
     expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeDisabled()
     expect(useBatchStore.getState().selected).toEqual([])
     await useBatchStore.getState().setOutput('D:\\Translated')
@@ -78,6 +78,13 @@ describe('batch chapter browser', () => {
   it('selects healthy chapters and leaves corrupt archives disabled', async () => {
     vi.spyOn(commands, 'browseBatchSource').mockResolvedValue(source)
     render(<BatchPage />)
+    const folders = within(screen.getByRole('group', { name: 'Batch folders' }))
+    expect(folders.getByRole('button', { name: 'Choose source folder' })).toHaveTextContent(
+      'Source folder',
+    )
+    expect(folders.getByRole('button', { name: 'Choose export folder' })).toHaveTextContent(
+      'Export folder',
+    )
     fireEvent.click(
       within(screen.getByRole('group', { name: 'Batch folders' })).getByRole('button', {
         name: 'Choose source folder',
