@@ -609,6 +609,10 @@
     "layout": {
       "caption": "Show titles below covers",
       "overlay": "Show titles on covers"
-    }
+    },
+    "pause": "Pause",
+    "pausing": "Pausing…",
+    "paused": "Paused",
+    "resume": "Resume"
   }
 }

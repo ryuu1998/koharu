@@ -1,3 +1,4 @@
+mod control;
 mod device;
 mod hardware;
 mod network;
@@ -7,6 +8,7 @@ mod store;
 
 pub mod download;
 
+pub use control::{Activity, RunControl};
 pub use device::{Backend, Device, DeviceType};
 pub use hardware::Hardware;
 pub use runtime::{Feature, Package, Runtime, Torch};

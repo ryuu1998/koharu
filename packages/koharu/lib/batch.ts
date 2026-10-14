@@ -51,6 +51,7 @@ interface BatchStore {
   exported: string[]
   running: boolean
   stopping: boolean
+  pauseState: 'playing' | 'pausing' | 'paused'
   activePath: string | null
   progress: Extract<BatchEvent, { event: 'chapter_progress' }> | null
   stages: Partial<Record<Stage, number>>
@@ -81,6 +82,7 @@ export const useBatchStore = create<BatchStore>()(
       exported: [],
       running: false,
       stopping: false,
+      pauseState: 'playing',
       activePath: null,
       progress: null,
       stages: {},
@@ -167,6 +169,7 @@ export async function startBatch(): Promise<void> {
   useBatchStore.setState({
     running: true,
     stopping: false,
+    pauseState: 'playing',
     report: null,
     progress: null,
     activePath: null,
@@ -242,6 +245,7 @@ export async function startBatch(): Promise<void> {
       return {
         running: false,
         stopping: false,
+        pauseState: 'playing',
         statuses,
         selected: state.selected.filter((path) => !state.exported.includes(path)),
       }
@@ -259,4 +263,26 @@ export async function stopBatch(): Promise<void> {
     useBatchStore.setState({ stopping: false })
     throw error
   }
+}
+
+export async function pauseBatch(): Promise<void> {
+  const { runId, running, pauseState, stopping } = useBatchStore.getState()
+  if (!runId || !running || stopping || pauseState !== 'playing') return
+  useBatchStore.setState({ pauseState: 'pausing' })
+  try {
+    const paused = await call(commands.pauseBatch, runId)
+    const current = useBatchStore.getState()
+    if (current.runId === runId && current.running && !current.stopping)
+      useBatchStore.setState({ pauseState: paused ? 'paused' : 'playing' })
+  } catch (error) {
+    if (useBatchStore.getState().runId === runId) useBatchStore.setState({ pauseState: 'playing' })
+    throw error
+  }
+}
+
+export async function resumeBatch(): Promise<void> {
+  const { runId, running, pauseState } = useBatchStore.getState()
+  if (!runId || !running || pauseState !== 'paused') return
+  await call(commands.resumeBatch, runId)
+  if (useBatchStore.getState().runId === runId) useBatchStore.setState({ pauseState: 'playing' })
 }

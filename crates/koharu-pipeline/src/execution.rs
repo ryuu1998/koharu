@@ -5,8 +5,8 @@ use futures::{StreamExt as _, stream::FuturesUnordered};
 use koharu_scene::{EntityId, Snapshot};
 
 use crate::{
-    Committer, ErrorKind, PipelineError, Progress, ProgressSink, Report, Request, RunStatus, Stage,
-    StageOutput, StopToken,
+    Committer, ErrorKind, PipelineError, Progress, ProgressSink, Report, Request, RunControl,
+    RunStatus, Stage, StageOutput,
     images::ImageCache,
     progress,
     resources::ResourceMonitor,
@@ -20,7 +20,7 @@ pub(crate) struct Execution<'a> {
     runner: Arc<StageRunner>,
     resources: Arc<ResourceMonitor>,
     committer: &'a mut dyn Committer,
-    stop: StopToken,
+    stop: RunControl,
     progress: Option<ProgressSink>,
     scope: NormalizedScope,
     scheduler: Scheduler,
@@ -126,6 +126,10 @@ impl<'a> Execution<'a> {
             }
 
             let Some(completion) = running.next().await else {
+                if self.stop.paused() && !self.stopped() && self.failure.is_none() {
+                    self.stop.ready().await;
+                    continue;
+                }
                 break;
             };
             if self.stopped() || self.failure.is_some() {
@@ -140,7 +144,7 @@ impl<'a> Execution<'a> {
     }
 
     fn take_ready_job(&mut self) -> Option<StageJob> {
-        if self.stopped() || self.failure.is_some() {
+        if self.stopped() || self.stop.paused() || self.failure.is_some() {
             return None;
         }
         let (page, stage) = self.scheduler.start_next()?;

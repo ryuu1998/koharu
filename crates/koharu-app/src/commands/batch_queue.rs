@@ -71,7 +71,10 @@ impl Queue {
                 suffix += 1;
             }
             outputs.insert(path_key(&absolute_target(&target)?));
-            accepted.push(WorkItem { path: entry.path, output: target });
+            accepted.push(WorkItem {
+                path: entry.path,
+                output: target,
+            });
         }
         ensure!(
             outputs.is_disjoint(&sources),
@@ -134,9 +137,13 @@ impl Queue {
 
 fn path_key(path: &Path) -> PathBuf {
     #[cfg(windows)]
-    { PathBuf::from(path.to_string_lossy().to_lowercase()) }
+    {
+        PathBuf::from(path.to_string_lossy().to_lowercase())
+    }
     #[cfg(not(windows))]
-    { path.to_owned() }
+    {
+        path.to_owned()
+    }
 }
 
 fn absolute_target(path: &Path) -> Result<PathBuf> {

@@ -7,7 +7,7 @@ use anyhow::Result;
 use koharu_scene::{EntityId, Patch};
 
 use crate::{
-    ErrorKind, PipelineConfig, PipelineError, Progress, ProgressSink, Stage, StopToken,
+    ErrorKind, PipelineConfig, PipelineError, Progress, ProgressSink, RunControl, Stage,
     accelerator::AcceleratorGate,
     progress,
     resources::ResourceMonitor,
@@ -82,9 +82,9 @@ impl StageRunner {
         } else {
             None
         };
-        if job.stop.stopped() {
+        let Some(_activity) = job.stop.admit().await else {
             return Ok(StageOutcome::Stopped);
-        }
+        };
         let first = self.load_and_process(job, model).await;
         let failure = match first {
             Ok(outcome) => return Ok(outcome),
@@ -184,7 +184,7 @@ fn is_out_of_memory(error: &anyhow::Error) -> bool {
 pub(crate) struct StageJob {
     stage: Stage,
     input: StageInput,
-    stop: StopToken,
+    stop: RunControl,
     progress: Option<ProgressSink>,
 }
 
@@ -192,7 +192,7 @@ impl StageJob {
     pub(crate) fn new(
         stage: Stage,
         input: StageInput,
-        stop: StopToken,
+        stop: RunControl,
         progress: Option<ProgressSink>,
     ) -> Self {
         Self {

@@ -8,6 +8,8 @@ import {
   FolderOpen,
   LoaderCircle,
   Settings,
+  Pause,
+  Play,
   Upload,
   TriangleAlert,
 } from 'lucide-react'
@@ -17,7 +19,14 @@ import { useTranslation } from 'react-i18next'
 import { BatchQueue } from '@/components/batch/BatchQueue'
 import { BatchViewControls } from '@/components/batch/BatchViewControls'
 import { call } from '@/lib/backend'
-import { sortBatchChapters, startBatch, stopBatch, useBatchStore } from '@/lib/batch'
+import {
+  pauseBatch,
+  resumeBatch,
+  sortBatchChapters,
+  startBatch,
+  stopBatch,
+  useBatchStore,
+} from '@/lib/batch'
 import { useKoharuStore } from '@/lib/store'
 import { commands } from '@koharu/bridge/protocol'
 import { Button } from '@koharu/ui/components/button'
@@ -34,6 +43,7 @@ export function BatchPage() {
   const select = useBatchStore((s) => s.select)
   const running = useBatchStore((s) => s.running)
   const stopping = useBatchStore((s) => s.stopping)
+  const pauseState = useBatchStore((s) => s.pauseState)
   const cardSize = useBatchStore((s) => s.cardSize)
   const cardLayout = useBatchStore((s) => s.cardLayout)
   const sortBy = useBatchStore((s) => s.sortBy)
@@ -94,15 +104,40 @@ export function BatchPage() {
           )}
         </div>
         {running ? (
-          <Button
-            variant='outline'
-            size='sm'
-            className='min-w-24 text-[11px]'
-            disabled={stopping}
-            onClick={() => void stopBatch().catch(() => undefined)}
-          >
-            {t(stopping ? 'batch.stopping' : 'activity.stop')}
-          </Button>
+          <div className='flex items-center gap-2'>
+            <Button
+              variant='outline'
+              size='sm'
+              className='gap-1.5 text-[11px]'
+              disabled={stopping || pauseState === 'pausing'}
+              onClick={() =>
+                void (pauseState === 'paused' ? resumeBatch() : pauseBatch()).catch(() => undefined)
+              }
+            >
+              {pauseState === 'paused' ? (
+                <Play className='size-3.5' />
+              ) : (
+                <Pause className='size-3.5' />
+              )}
+              {t(
+                'batch.' +
+                  (pauseState === 'paused'
+                    ? 'resume'
+                    : pauseState === 'pausing'
+                      ? 'pausing'
+                      : 'pause'),
+              )}
+            </Button>
+            <Button
+              variant='outline'
+              size='sm'
+              className='min-w-24 text-[11px]'
+              disabled={stopping}
+              onClick={() => void stopBatch().catch(() => undefined)}
+            >
+              {t(stopping ? 'batch.stopping' : 'activity.stop')}
+            </Button>
+          </div>
         ) : (
           <Button
             size='sm'

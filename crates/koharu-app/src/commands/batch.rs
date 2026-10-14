@@ -9,8 +9,8 @@ use anyhow::{Context as _, Result, ensure};
 use async_trait::async_trait;
 use koharu_desktop::Desktop;
 use koharu_pipeline::{
-    Committer, Operation, Pipeline, Progress, Request, RunStatus, Scope, Stage, StageOutput,
-    StopToken,
+    Committer, Operation, Pipeline, Progress, Request, RunControl, RunStatus, Scope, Stage,
+    StageOutput,
 };
 use koharu_scene::{
     AssetInput, AssetMetadata, AssetRole, At, EntityId, PageDraft, Session, Snapshot,
@@ -111,7 +111,7 @@ pub(crate) struct BatchState {
 pub(super) struct BatchRun {
     id: String,
     queue: Mutex<Queue>,
-    stop: StopToken,
+    stop: RunControl,
     events: EventSink,
 }
 
@@ -137,7 +137,7 @@ pub(crate) async fn process_batch(
     batch: State<'_, BatchState>,
     processing: State<'_, Processing>,
 ) -> std::result::Result<BatchReport, Error> {
-    let stop = StopToken::default();
+    let stop = RunControl::default();
     let sink: EventSink = Arc::new(move |event| {
         let _ = on_event.send(event);
     });
@@ -205,6 +205,27 @@ pub(crate) async fn reorder_batch(
 
 #[tauri::command]
 #[specta::specta]
+pub(crate) async fn pause_batch(
+    id: String,
+    batch: State<'_, BatchState>,
+) -> std::result::Result<bool, Error> {
+    let run = current(&batch, &id)?;
+    run.stop.pause();
+    Ok(run.stop.drained().await)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn resume_batch(
+    id: String,
+    batch: State<'_, BatchState>,
+) -> std::result::Result<(), Error> {
+    current(&batch, &id)?.stop.resume();
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn stop_batch(batch: State<'_, BatchState>) -> std::result::Result<(), Error> {
     if let Some(run) = batch.active.lock().as_ref() {
         run.stop.stop();
@@ -214,7 +235,7 @@ pub(crate) async fn stop_batch(batch: State<'_, BatchState>) -> std::result::Res
 
 pub(super) fn prepare(
     request: &BatchRequest,
-    stop: StopToken,
+    stop: RunControl,
     events: EventSink,
 ) -> Result<Arc<BatchRun>> {
     ensure!(!request.id.is_empty(), "batch identity is required");
@@ -252,7 +273,7 @@ pub(super) async fn run_chapters(
         });
     }
     loop {
-        if stop.stopped() {
+        if !stop.ready().await {
             report.stopped = true;
             break;
         }
@@ -341,12 +362,16 @@ async fn process_chapter(
     overwrite: bool,
     pipeline: &Pipeline,
     desktop: &Desktop,
-    stop: StopToken,
+    stop: RunControl,
     events: EventSink,
 ) -> Result<()> {
     let started = Instant::now();
     let path = chapter.to_owned();
+    let Some(import_activity) = stop.admit().await else {
+        anyhow::bail!("batch stopped");
+    };
     let pages = tokio_rayon::spawn(move || import::import(vec![path])).await?;
+    drop(import_activity);
     let count = pages.len();
     events(BatchEvent::ChapterStarted {
         path: chapter.to_owned(),
@@ -434,6 +459,9 @@ async fn process_chapter(
         "batch stopped"
     );
     let processing_elapsed = processing_started.elapsed();
+    let Some(_export_activity) = stop.admit().await else {
+        anyhow::bail!("batch stopped");
+    };
     let export_started = Instant::now();
     events(BatchEvent::ChapterExporting {
         path: chapter.to_owned(),

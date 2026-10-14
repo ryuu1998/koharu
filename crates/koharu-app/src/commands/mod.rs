@@ -73,6 +73,8 @@ pub fn bindings() -> tauri_specta::Builder<tauri_runtime_cef::CefRuntime> {
             batch_source::get_batch_exports,
             batch::process_batch,
             batch::stop_batch,
+            batch::pause_batch,
+            batch::resume_batch,
             batch::append_batch,
             batch::reorder_batch,
             lifecycle::get_project,

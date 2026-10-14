@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use koharu_agent::{Control, Host, Invocation, Tool, ToolCall};
 use koharu_desktop::{Desktop, Frame};
-use koharu_pipeline::{Committer, Operation, RunStatus, Scope, Stage, StageOutput, StopToken};
+use koharu_pipeline::{Committer, Operation, RunControl, RunStatus, Scope, Stage, StageOutput};
 use koharu_scene::{Commit, EntityId, Snapshot};
 use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
@@ -129,7 +129,7 @@ impl KoharuHost {
             .context("no project is open")?
             .snapshot();
         let job = JobId::new();
-        let stop = StopToken::default();
+        let stop = RunControl::default();
         {
             let processing = self.handle.state::<Processing>();
             let mut stops = processing.stops.lock();

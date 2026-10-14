@@ -55,6 +55,8 @@ beforeEach(() => {
     exported: [],
     running: false,
     stopping: false,
+    pauseState: 'playing',
+    stages: {},
     report: null,
     progress: null,
     activePath: null,
@@ -278,6 +280,8 @@ describe('batch chapter browser', () => {
       })
     })
     const stop = vi.spyOn(commands, 'stopBatch').mockResolvedValue(null)
+    const pause = vi.spyOn(commands, 'pauseBatch').mockResolvedValue(true)
+    const resume = vi.spyOn(commands, 'resumeBatch').mockResolvedValue(null)
     render(<BatchPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Translate 1 chapter' }))
     await waitFor(() => expect(run).toHaveBeenCalledOnce())
@@ -297,6 +301,13 @@ describe('batch chapter browser', () => {
     expect(screen.queryByRole('progressbar', { name: 'Chapter progress' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Expand queue' }))
     expect(screen.getByRole('progressbar', { name: 'Chapter progress' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    await waitFor(() => expect(pause).toHaveBeenCalledOnce())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled())
+    expect(useBatchStore.getState().stages.detection).toBe(8)
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    await waitFor(() => expect(resume).toHaveBeenCalledOnce())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     await waitFor(() => expect(stop).toHaveBeenCalledOnce())
     expect(screen.getByRole('button', { name: 'Stopping…' })).toBeDisabled()

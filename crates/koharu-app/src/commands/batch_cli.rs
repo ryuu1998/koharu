@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use koharu_desktop::Desktop;
-use koharu_pipeline::{Pipeline, StopToken};
+use koharu_pipeline::{Pipeline, RunControl};
 
 use super::{
     batch::{BatchEvent, BatchReport, BatchRequest, prepare, run_chapters},
@@ -47,7 +47,7 @@ pub async fn run_batch(options: BatchOptions) -> Result<BatchReport> {
     koharu_ml::init().await?;
     let pipeline = Pipeline::load(koharu_ml::device(options.cpu))?;
     let desktop = Desktop::new()?;
-    let stop = StopToken::default();
+    let stop = RunControl::default();
     let signal_stop = stop.clone();
     let signal = tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
