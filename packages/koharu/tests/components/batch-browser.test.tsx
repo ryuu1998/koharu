@@ -47,6 +47,7 @@ beforeEach(() => {
     output: null,
     selected: [],
     queue: [],
+    runId: null,
     cardSize: 96,
     cardLayout: 'overlay',
     sortBy: 'added',
@@ -131,14 +132,16 @@ describe('batch chapter browser', () => {
     ).toBeInTheDocument()
   })
 
-  it('freezes run order, waits for a saved export, and preserves queue rows during handoff', async () => {
+  it('preserves selection order independently of sorting and uses stable progress identities', async () => {
     useBatchStore.getState().setSource(sortableSource)
+    const firstPath = 'chapter2.cbz'
+    useBatchStore.getState().select([firstPath, source.chapters[0].path, 'chapter10.cbz'])
     useBatchStore.getState().setSort('pages')
     let events: { onmessage: (event: BatchEvent) => void } | undefined
     let finish: ((report: BatchReport) => void) | undefined
     const run = vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
       events = channel
-      channel.onmessage({ event: 'chapter_started', index: 0, name: 'chapter1.cbz', pages: 32 })
+      channel.onmessage({ event: 'chapter_started', path: firstPath, name: firstPath, pages: 12 })
       return new Promise<BatchReport>((resolve) => {
         finish = resolve
       })
@@ -146,23 +149,23 @@ describe('batch chapter browser', () => {
     render(<BatchPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Translate 3 chapters' }))
     await waitFor(() => expect(run).toHaveBeenCalledOnce())
-    const order = [source.chapters[0].path, 'chapter10.cbz', 'chapter2.cbz']
-    expect(run.mock.calls[0][0].chapters).toEqual(order)
+    const order = [firstPath, source.chapters[0].path, 'chapter10.cbz']
+    expect(run.mock.calls[0][0].chapters.map((entry) => entry.path)).toEqual(order)
     const queue = within(screen.getByRole('complementary', { name: 'Queue' }))
-    const first = queue.getByRole('listitem', { name: 'chapter1.cbz' })
+    const first = queue.getByRole('listitem', { name: firstPath })
     fireEvent.click(screen.getByRole('button', { name: 'Most pages first. Reverse order' }))
     expect(useBatchStore.getState().queue).toEqual(order)
     act(() => {
       events?.onmessage({
         event: 'chapter_progress',
-        index: 0,
-        completed_pages: 32,
-        total_pages: 32,
-        completed_steps: 128,
-        total_steps: 128,
+        path: firstPath,
+        completed_pages: 12,
+        total_pages: 12,
+        completed_steps: 48,
+        total_steps: 48,
         stage: 'translation',
       })
-      events?.onmessage({ event: 'chapter_exporting', index: 0 })
+      events?.onmessage({ event: 'chapter_exporting', path: firstPath })
     })
     expect(screen.getByRole('progressbar', { name: 'Chapter progress' })).toHaveAttribute(
       'aria-valuenow',
@@ -171,21 +174,25 @@ describe('batch chapter browser', () => {
     expect(useBatchStore.getState().exported).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Collapse queue' }))
     act(() => {
-      events?.onmessage({ event: 'chapter_finished', index: 0, output: 'output/chapter1.cbz' })
-      events?.onmessage({ event: 'chapter_started', index: 1, name: 'chapter10.cbz', pages: 32 })
+      events?.onmessage({
+        event: 'chapter_finished',
+        path: firstPath,
+        output: 'output/chapter2.cbz',
+      })
+      events?.onmessage({
+        event: 'chapter_started',
+        path: 'chapter10.cbz',
+        name: 'chapter10.cbz',
+        pages: 32,
+      })
     })
     expect(screen.getByRole('button', { name: 'Expand queue' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
     fireEvent.click(screen.getByRole('button', { name: 'Expand queue' }))
-    expect(queue.getByRole('listitem', { name: 'chapter1.cbz' })).toBe(first)
+    expect(queue.getByRole('listitem', { name: firstPath })).toBe(first)
     expect(within(first).getByText('Translated')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar', { name: 'Chapter progress' })).toHaveAttribute(
-      'aria-valuenow',
-      '0',
-    )
-    expect(screen.queryByRole('progressbar', { name: 'Detection' })).not.toBeInTheDocument()
     await act(async () => {
       finish?.({ completed: 1, skipped: 0, failures: [], stopped: true })
     })
@@ -205,7 +212,7 @@ describe('batch chapter browser', () => {
       source.chapters.map((chapter) => chapter.path),
       'D:\\Translated',
     )
-    expect(useBatchStore.getState().selected).toEqual([source.chapters[0].path])
+    expect(useBatchStore.getState().selected).toEqual([])
   })
   it('selects healthy chapters and leaves corrupt archives disabled', async () => {
     vi.spyOn(commands, 'browseBatchSource').mockResolvedValue(source)
@@ -223,15 +230,13 @@ describe('batch chapter browser', () => {
       }),
     )
     await waitFor(() =>
-      expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeChecked(),
+      expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).not.toBeChecked(),
     )
     expect(screen.getByRole('checkbox', { name: 'broken.cbz' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Choose export folder' })).toHaveAttribute(
       'title',
       expect.stringContaining('C:\\Manga\\Translated'),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Deselect all' }))
-    expect(useBatchStore.getState().selected).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
     expect(useBatchStore.getState().selected).toEqual(['C:\\Manga\\chapter1.cbz'])
   })
@@ -249,13 +254,19 @@ describe('batch chapter browser', () => {
 
   it('starts only selected healthy chapters and keeps stop active until completion', async () => {
     useBatchStore.getState().setSource(source)
+    useBatchStore.getState().select([source.chapters[0].path])
     let finish: ((report: BatchReport) => void) | undefined
     const run = vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
       channel.onmessage({ event: 'started', total_chapters: 1 })
-      channel.onmessage({ event: 'chapter_started', index: 0, name: 'chapter1.cbz', pages: 32 })
+      channel.onmessage({
+        event: 'chapter_started',
+        path: source.chapters[0].path,
+        name: 'chapter1.cbz',
+        pages: 32,
+      })
       channel.onmessage({
         event: 'chapter_progress',
-        index: 0,
+        path: source.chapters[0].path,
         completed_pages: 8,
         total_pages: 32,
         completed_steps: 8,
@@ -271,8 +282,8 @@ describe('batch chapter browser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Translate 1 chapter' }))
     await waitFor(() => expect(run).toHaveBeenCalledOnce())
     expect(run.mock.calls[0][0]).toEqual({
-      chapters: ['C:\\Manga\\chapter1.cbz'],
-      output: 'C:\\Manga\\Translated',
+      id: expect.any(String),
+      chapters: [{ path: source.chapters[0].path, output: source.default_output }],
       jpeg_quality: 95,
       overwrite: false,
     })

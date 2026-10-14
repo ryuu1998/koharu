@@ -5,7 +5,8 @@ use koharu_desktop::Desktop;
 use koharu_pipeline::{Pipeline, StopToken};
 
 use super::{
-    batch::{BatchEvent, BatchReport, BatchRequest, run_chapters, validate},
+    batch::{BatchEvent, BatchReport, BatchRequest, prepare, run_chapters},
+    batch_queue::BatchEntry,
     batch_source,
 };
 
@@ -31,12 +32,18 @@ pub async fn run_batch(options: BatchOptions) -> Result<BatchReport> {
         }
     });
     let request = BatchRequest {
-        chapters: batch_source::discover(&options.input)?,
-        output,
+        id: "cli".to_owned(),
+        chapters: batch_source::discover(&options.input)?
+            .into_iter()
+            .map(|path| BatchEntry {
+                path,
+                output: output.clone(),
+            })
+            .collect(),
         jpeg_quality: options.jpeg_quality,
         overwrite: options.overwrite,
     };
-    validate(&request)?;
+
     koharu_ml::init().await?;
     let pipeline = Pipeline::load(koharu_ml::device(options.cpu))?;
     let desktop = Desktop::new()?;
@@ -56,7 +63,8 @@ pub async fn run_batch(options: BatchOptions) -> Result<BatchReport> {
         BatchEvent::ChapterFailed { name, error, .. } => eprintln!("Failed {name}: {error}"),
         _ => {}
     });
-    let result = run_chapters(request, pipeline, &desktop, stop, events).await;
+    let run = prepare(&request, stop, events)?;
+    let result = run_chapters(request, pipeline, &desktop, run).await;
     signal.abort();
     result
 }

@@ -1,6 +1,7 @@
 pub(crate) mod agent;
 pub(crate) mod batch;
 pub(crate) mod batch_cli;
+mod batch_queue;
 pub(crate) mod batch_source;
 pub(crate) mod canvas;
 pub(crate) mod editing;
@@ -72,6 +73,8 @@ pub fn bindings() -> tauri_specta::Builder<tauri_runtime_cef::CefRuntime> {
             batch_source::get_batch_exports,
             batch::process_batch,
             batch::stop_batch,
+            batch::append_batch,
+            batch::reorder_batch,
             lifecycle::get_project,
             lifecycle::get_pages,
             lifecycle::get_page,

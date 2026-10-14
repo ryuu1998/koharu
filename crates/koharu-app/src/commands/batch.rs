@@ -21,15 +21,17 @@ use specta::Type;
 use tauri::{State, ipc::Channel};
 
 use super::{
-    Error, batch_source, import,
+    Error,
+    batch_queue::{BatchEntry, Queue},
+    batch_source, import,
     output::cbz,
     processing::{JobId, Processing},
 };
 
 #[derive(Clone, Debug, Deserialize, Type)]
 pub struct BatchRequest {
-    pub chapters: Vec<PathBuf>,
-    pub output: PathBuf,
+    pub id: String,
+    pub chapters: Vec<BatchEntry>,
     pub jpeg_quality: u8,
     pub overwrite: bool,
 }
@@ -57,16 +59,17 @@ pub enum BatchEvent {
         #[specta(type = f64)]
         total_chapters: usize,
     },
+    QueueChanged {
+        paths: Vec<PathBuf>,
+    },
     ChapterStarted {
-        #[specta(type = f64)]
-        index: usize,
+        path: PathBuf,
         name: String,
         #[specta(type = f64)]
         pages: usize,
     },
     ChapterProgress {
-        #[specta(type = f64)]
-        index: usize,
+        path: PathBuf,
         #[specta(type = f64)]
         completed_pages: usize,
         #[specta(type = f64)]
@@ -78,22 +81,18 @@ pub enum BatchEvent {
         stage: Stage,
     },
     ChapterExporting {
-        #[specta(type = f64)]
-        index: usize,
+        path: PathBuf,
     },
     ChapterFinished {
-        #[specta(type = f64)]
-        index: usize,
+        path: PathBuf,
         output: PathBuf,
     },
     ChapterSkipped {
-        #[specta(type = f64)]
-        index: usize,
+        path: PathBuf,
         output: PathBuf,
     },
     ChapterFailed {
-        #[specta(type = f64)]
-        index: usize,
+        path: PathBuf,
         name: String,
         error: String,
     },
@@ -106,7 +105,14 @@ pub(super) type EventSink = Arc<dyn Fn(BatchEvent) + Send + Sync>;
 
 #[derive(Default)]
 pub(crate) struct BatchState {
-    stop: Mutex<Option<StopToken>>,
+    active: Mutex<Option<Arc<BatchRun>>>,
+}
+
+pub(super) struct BatchRun {
+    id: String,
+    queue: Mutex<Queue>,
+    stop: StopToken,
+    events: EventSink,
 }
 
 struct BatchGuard<'a> {
@@ -116,7 +122,7 @@ struct BatchGuard<'a> {
 }
 impl Drop for BatchGuard<'_> {
     fn drop(&mut self) {
-        self.batch.stop.lock().take();
+        self.batch.active.lock().take();
         self.processing.stops.lock().remove(&self.job);
     }
 }
@@ -131,106 +137,162 @@ pub(crate) async fn process_batch(
     batch: State<'_, BatchState>,
     processing: State<'_, Processing>,
 ) -> std::result::Result<BatchReport, Error> {
-    validate(&request)?;
-    let job = JobId::new();
     let stop = StopToken::default();
+    let sink: EventSink = Arc::new(move |event| {
+        let _ = on_event.send(event);
+    });
+    let run = prepare(&request, stop.clone(), sink)?;
+    let job = JobId::new();
     {
         let mut stops = processing.stops.lock();
-        let mut active = batch.stop.lock();
-        // Project replacement can clear the shared stop map before cancellation finishes.
+        let mut active = batch.active.lock();
         if !stops.is_empty() || active.is_some() {
             return Err(anyhow::anyhow!("another process is already running").into());
         }
-        *active = Some(stop.clone());
-        stops.insert(job, stop.clone());
+        *active = Some(run.clone());
+        stops.insert(job, stop);
     }
     let _guard = BatchGuard {
         batch: &batch,
         processing: &processing,
         job,
     };
-    let sink = Arc::new(move |event| {
-        let _ = on_event.send(event);
+    Ok(run_chapters(request, pipeline.inner().clone(), &desktop, run).await?)
+}
+
+fn current(batch: &BatchState, id: &str) -> Result<Arc<BatchRun>> {
+    let active = batch.active.lock();
+    let run = active.as_ref().context("no batch is running")?;
+    ensure!(run.id == id, "the batch has changed");
+    Ok(run.clone())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn append_batch(
+    id: String,
+    chapters: Vec<BatchEntry>,
+    batch: State<'_, BatchState>,
+) -> std::result::Result<(), Error> {
+    let run = current(&batch, &id)?;
+    if run.stop.stopped() {
+        return Err(anyhow::anyhow!("the batch is stopping").into());
+    }
+    let mut queue = run.queue.lock();
+    queue.append(chapters)?;
+    (run.events)(BatchEvent::QueueChanged {
+        paths: queue.paths(),
     });
-    Ok(run_chapters(request, pipeline.inner().clone(), &desktop, stop, sink).await?)
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn reorder_batch(
+    id: String,
+    path: PathBuf,
+    before: Option<PathBuf>,
+    batch: State<'_, BatchState>,
+) -> std::result::Result<(), Error> {
+    let run = current(&batch, &id)?;
+    let mut queue = run.queue.lock();
+    queue.reorder(&path, before.as_deref())?;
+    (run.events)(BatchEvent::QueueChanged {
+        paths: queue.paths(),
+    });
+    Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn stop_batch(batch: State<'_, BatchState>) -> std::result::Result<(), Error> {
-    if let Some(stop) = batch.stop.lock().as_ref() {
-        stop.stop();
+    if let Some(run) = batch.active.lock().as_ref() {
+        run.stop.stop();
     }
     Ok(())
 }
 
-pub(super) fn validate(request: &BatchRequest) -> Result<()> {
+pub(super) fn prepare(
+    request: &BatchRequest,
+    stop: StopToken,
+    events: EventSink,
+) -> Result<Arc<BatchRun>> {
+    ensure!(!request.id.is_empty(), "batch identity is required");
     ensure!(!request.chapters.is_empty(), "select at least one chapter");
     ensure!(
         (1..=100).contains(&request.jpeg_quality),
         "JPEG quality must be between 1 and 100"
     );
-    for chapter in &request.chapters {
-        ensure!(
-            chapter.is_file() && batch_source::is_cbz(chapter),
-            "input must be a CBZ archive: {}",
-            chapter.display()
-        );
-        let output = request
-            .output
-            .join(chapter.file_name().context("chapter has no filename")?);
-        if output.exists() {
-            ensure!(
-                std::fs::canonicalize(chapter)? != std::fs::canonicalize(&output)?,
-                "choose a different output folder; source archives cannot be replaced"
-            );
-        }
-    }
-    Ok(())
+    let mut queue = Queue::default();
+    queue.append(request.chapters.clone())?;
+    Ok(Arc::new(BatchRun {
+        id: request.id.clone(),
+        queue: Mutex::new(queue),
+        stop,
+        events,
+    }))
 }
 
 pub(super) async fn run_chapters(
     request: BatchRequest,
     pipeline: Pipeline,
     desktop: &Desktop,
-    stop: StopToken,
-    events: EventSink,
+    run: Arc<BatchRun>,
 ) -> Result<BatchReport> {
-    validate(&request)?;
-    tokio::fs::create_dir_all(&request.output).await?;
+    let events = &run.events;
+    let stop = &run.stop;
     let mut report = BatchReport::default();
-    events(BatchEvent::Started {
-        total_chapters: request.chapters.len(),
-    });
-    for (index, chapter) in request.chapters.iter().enumerate() {
+    {
+        let queue = run.queue.lock();
+        events(BatchEvent::Started {
+            total_chapters: queue.paths().len(),
+        });
+        events(BatchEvent::QueueChanged {
+            paths: queue.paths(),
+        });
+    }
+    loop {
         if stop.stopped() {
             report.stopped = true;
             break;
         }
-        let output = request
-            .output
-            .join(chapter.file_name().context("chapter has no filename")?);
+        // Claim and append use the same lock: work is either accepted or the run is closed.
+        let Some(entry) = run.queue.lock().claim() else {
+            break;
+        };
+        let chapter = entry.path;
+        let output = entry.output;
         if output.exists() && !request.overwrite {
             report.skipped += 1;
-            events(BatchEvent::ChapterSkipped { index, output });
+            events(BatchEvent::ChapterSkipped {
+                path: chapter,
+                output,
+            });
+            run.queue.lock().finish();
             continue;
         }
-        match process_chapter(
-            chapter,
-            output.clone(),
-            request.jpeg_quality,
-            request.overwrite,
-            &pipeline,
-            desktop,
-            stop.clone(),
-            Arc::clone(&events),
-            index,
-        )
-        .await
-        {
+        let result = async {
+            tokio::fs::create_dir_all(output.parent().context("output needs a parent")?).await?;
+            process_chapter(
+                &chapter,
+                output.clone(),
+                request.jpeg_quality,
+                request.overwrite,
+                &pipeline,
+                desktop,
+                stop.clone(),
+                Arc::clone(events),
+            )
+            .await
+        }
+        .await;
+        match result {
             Ok(()) => {
                 report.completed += 1;
-                events(BatchEvent::ChapterFinished { index, output });
+                events(BatchEvent::ChapterFinished {
+                    path: chapter,
+                    output,
+                });
             }
             Err(_) if stop.stopped() => {
                 report.stopped = true;
@@ -239,7 +301,7 @@ pub(super) async fn run_chapters(
             Err(error) => {
                 let message = format!("{error:#}");
                 events(BatchEvent::ChapterFailed {
-                    index,
+                    path: chapter.clone(),
                     name: chapter
                         .file_name()
                         .unwrap_or_default()
@@ -248,11 +310,12 @@ pub(super) async fn run_chapters(
                     error: message.clone(),
                 });
                 report.failures.push(BatchFailure {
-                    chapter: chapter.clone(),
+                    chapter,
                     error: message,
                 });
             }
         }
+        run.queue.lock().finish();
     }
     events(BatchEvent::Finished {
         report: report.clone(),
@@ -280,14 +343,13 @@ async fn process_chapter(
     desktop: &Desktop,
     stop: StopToken,
     events: EventSink,
-    index: usize,
 ) -> Result<()> {
     let started = Instant::now();
     let path = chapter.to_owned();
     let pages = tokio_rayon::spawn(move || import::import(vec![path])).await?;
     let count = pages.len();
     events(BatchEvent::ChapterStarted {
-        index,
+        path: chapter.to_owned(),
         name: chapter
             .file_name()
             .unwrap_or_default()
@@ -325,6 +387,7 @@ async fn process_chapter(
     let progress = Arc::new(Mutex::new(ChapterProgress::default()));
     let progress_state = Arc::clone(&progress);
     let progress_events = Arc::clone(&events);
+    let progress_path = chapter.to_owned();
     let callback = Arc::new(move |event| {
         let stage = match &event {
             Progress::Started { .. } => return,
@@ -336,7 +399,7 @@ async fn process_chapter(
         let mut current = progress_state.lock();
         current.record(event);
         progress_events(BatchEvent::ChapterProgress {
-            index,
+            path: progress_path.clone(),
             completed_pages: current.completed(stage),
             total_pages: count,
             completed_steps: current.finished.len(),
@@ -372,7 +435,9 @@ async fn process_chapter(
     );
     let processing_elapsed = processing_started.elapsed();
     let export_started = Instant::now();
-    events(BatchEvent::ChapterExporting { index });
+    events(BatchEvent::ChapterExporting {
+        path: chapter.to_owned(),
+    });
     let rasterizer = match prepared {
         Some(result) => result?,
         None => preparation.await?,
@@ -424,25 +489,6 @@ impl ChapterProgress {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn refuses_to_overwrite_an_original_archive() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("chapter.cbz");
-        std::fs::write(&path, b"archive").unwrap();
-        let request = BatchRequest {
-            chapters: vec![path],
-            output: directory.path().to_owned(),
-            jpeg_quality: 95,
-            overwrite: true,
-        };
-        assert!(
-            validate(&request)
-                .unwrap_err()
-                .to_string()
-                .contains("source archives")
-        );
-    }
 
     #[test]
     fn progress_stays_monotonic_across_phase_changes_and_duplicate_events() {

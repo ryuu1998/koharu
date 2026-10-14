@@ -3,7 +3,7 @@
 import { ArrowDown, ArrowUp, ChevronDown, GalleryVerticalEnd, PanelBottom } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { type BatchSort, useBatchStore } from '@/lib/batch'
+import { type BatchSort, sortBatchChapters, useBatchStore } from '@/lib/batch'
 import { Button } from '@koharu/ui/components/button'
 import {
   DropdownMenu,
@@ -73,7 +73,18 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
         size='sm'
         className='text-[11px]'
         disabled={busy || running || !pending.length}
-        onClick={() => select(allSelected ? [] : pending.map((c) => c.path))}
+        onClick={() =>
+          select(
+            allSelected
+              ? []
+              : [
+                  ...selected,
+                  ...sortBatchChapters(pending, sortBy, descending)
+                    .filter((c) => !selected.includes(c.path))
+                    .map((c) => c.path),
+                ],
+          )
+        }
       >
         {t(allSelected ? 'batch.deselectAll' : 'batch.selectAll')}
       </Button>

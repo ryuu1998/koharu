@@ -11,6 +11,7 @@ import {
   type BatchEvent,
   type BatchReport,
   type BatchSource,
+  type Stage,
 } from '@koharu/bridge/protocol'
 
 type ChapterStatus = 'running' | 'exporting' | 'translated' | 'skipped' | 'failed' | 'stopped'
@@ -42,6 +43,7 @@ interface BatchStore {
   output: string | null
   selected: string[]
   queue: string[]
+  runId: string | null
   cardSize: number
   cardLayout: 'overlay' | 'caption'
   sortBy: BatchSort
@@ -51,6 +53,7 @@ interface BatchStore {
   stopping: boolean
   activePath: string | null
   progress: Extract<BatchEvent, { event: 'chapter_progress' }> | null
+  stages: Partial<Record<Stage, number>>
   completedChapters: number
   totalChapters: number
   statuses: Record<string, ChapterStatus>
@@ -70,6 +73,7 @@ export const useBatchStore = create<BatchStore>()(
       output: null,
       selected: [],
       queue: [],
+      runId: null,
       cardSize: 96,
       cardLayout: 'overlay',
       sortBy: 'added',
@@ -79,6 +83,7 @@ export const useBatchStore = create<BatchStore>()(
       stopping: false,
       activePath: null,
       progress: null,
+      stages: {},
       completedChapters: 0,
       totalChapters: 0,
       statuses: {},
@@ -87,9 +92,7 @@ export const useBatchStore = create<BatchStore>()(
         set({
           source,
           output: source.default_output,
-          selected: source.chapters
-            .filter((chapter) => !chapter.error && !source.exported.includes(chapter.path))
-            .map((chapter) => chapter.path),
+          selected: [],
           exported: source.exported,
           report: null,
           progress: null,
@@ -118,9 +121,7 @@ export const useBatchStore = create<BatchStore>()(
           queue: [],
           completedChapters: 0,
           totalChapters: 0,
-          selected: source.chapters
-            .filter((chapter) => !chapter.error && !exported.includes(chapter.path))
-            .map((chapter) => chapter.path),
+          selected: [],
         })
       },
       select: (selected) => {
@@ -158,9 +159,10 @@ export const useBatchStore = create<BatchStore>()(
 export async function startBatch(): Promise<void> {
   const state = useBatchStore.getState()
   if (state.running || !state.source || !state.output || !state.selected.length) return
-  const chapters = sortBatchChapters(state.source.chapters, state.sortBy, state.sortDescending)
-    .filter((chapter) => !chapter.error && state.selected.includes(chapter.path))
-    .map((chapter) => chapter.path)
+  const chapters = state.selected.filter((path) =>
+    state.source?.chapters.some((chapter) => chapter.path === path && !chapter.error),
+  )
+  const id = crypto.randomUUID()
   if (!chapters.length) return
   useBatchStore.setState({
     running: true,
@@ -169,22 +171,33 @@ export async function startBatch(): Promise<void> {
     progress: null,
     activePath: null,
     queue: chapters,
+    runId: id,
     statuses: {},
     completedChapters: 0,
     totalChapters: chapters.length,
   })
   try {
     const events = new Channel<BatchEvent>((event) => {
-      if (event.event === 'started') useBatchStore.setState({ totalChapters: event.total_chapters })
-      else if (event.event === 'chapter_progress') useBatchStore.setState({ progress: event })
-      else if (event.event === 'finished') useBatchStore.setState({ report: event.report })
+      if (useBatchStore.getState().runId !== id) return
+      if (event.event === 'queue_changed') {
+        useBatchStore.setState({ queue: event.paths, totalChapters: event.paths.length })
+      } else if (event.event === 'started')
+        useBatchStore.setState({ totalChapters: event.total_chapters })
+      else if (event.event === 'chapter_progress') {
+        if (useBatchStore.getState().activePath !== event.path) return
+        useBatchStore.setState((state) => ({
+          progress: event,
+          stages: { ...state.stages, [event.stage]: event.completed_pages },
+        }))
+      } else if (event.event === 'finished') useBatchStore.setState({ report: event.report })
       else {
-        const path = chapters[event.index]
+        const path = event.path
         if (!path) return
         if (event.event === 'chapter_started') {
           useBatchStore.setState((state) => ({
             activePath: path,
             progress: null,
+            stages: {},
             statuses: { ...state.statuses, [path]: 'running' },
           }))
         } else if (event.event === 'chapter_exporting') {
@@ -209,7 +222,12 @@ export async function startBatch(): Promise<void> {
     })
     const report = await call(
       commands.processBatch,
-      { chapters, output: state.output, jpeg_quality: 95, overwrite: false },
+      {
+        id,
+        chapters: chapters.map((path) => ({ path, output: state.output! })),
+        jpeg_quality: 95,
+        overwrite: false,
+      },
       events,
     )
     useBatchStore.setState({ report })

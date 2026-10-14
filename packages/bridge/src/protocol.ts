@@ -29,6 +29,8 @@ export const commands = {
 	getBatchExports: (chapters: string[], output: string) => __TAURI_INVOKE<string[]>("get_batch_exports", { chapters, output }),
 	processBatch: (request: BatchRequest, onEvent: Channel<BatchEvent>) => __TAURI_INVOKE<BatchReport>("process_batch", { request, onEvent }),
 	stopBatch: () => __TAURI_INVOKE<null>("stop_batch"),
+	appendBatch: (id: string, chapters: BatchEntry[]) => __TAURI_INVOKE<null>("append_batch", { id, chapters }),
+	reorderBatch: (id: string, path: string, before: string | null) => __TAURI_INVOKE<null>("reorder_batch", { id, path, before }),
 	getProject: () => __TAURI_INVOKE<{
 	name: string,
 	revision: Revision,
@@ -120,7 +122,12 @@ export type BatchChapter = {
 	error: string | null,
 };
 
-export type BatchEvent = { event: "started"; total_chapters: number } | { event: "chapter_started"; index: number; name: string; pages: number } | { event: "chapter_progress"; index: number; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; index: number } | { event: "chapter_finished"; index: number; output: string } | { event: "chapter_skipped"; index: number; output: string } | { event: "chapter_failed"; index: number; name: string; error: string } | { event: "finished"; report: BatchReport };
+export type BatchEntry = {
+	path: string,
+	output: string,
+};
+
+export type BatchEvent = { event: "started"; total_chapters: number } | { event: "queue_changed"; paths: string[] } | { event: "chapter_started"; path: string; name: string; pages: number } | { event: "chapter_progress"; path: string; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; path: string } | { event: "chapter_finished"; path: string; output: string } | { event: "chapter_skipped"; path: string; output: string } | { event: "chapter_failed"; path: string; name: string; error: string } | { event: "finished"; report: BatchReport };
 
 export type BatchFailure = {
 	chapter: string,
@@ -135,8 +142,8 @@ export type BatchReport = {
 };
 
 export type BatchRequest = {
-	chapters: string[],
-	output: string,
+	id: string,
+	chapters: BatchEntry[],
 	jpeg_quality: number,
 	overwrite: boolean,
 };

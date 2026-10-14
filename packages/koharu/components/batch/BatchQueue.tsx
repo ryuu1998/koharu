@@ -4,7 +4,7 @@ import { Check, FileArchive, PanelRightClose, PanelRightOpen, TriangleAlert } fr
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { sortBatchChapters, useBatchStore } from '@/lib/batch'
+import { useBatchStore } from '@/lib/batch'
 import { Button } from '@koharu/ui/components/button'
 import { Progress } from '@koharu/ui/components/progress'
 import { cn } from '@koharu/ui/lib/utils'
@@ -20,17 +20,11 @@ export function BatchQueue() {
   const stopping = useBatchStore((s) => s.stopping)
   const activePath = useBatchStore((s) => s.activePath)
   const progress = useBatchStore((s) => s.progress)
-  const sortBy = useBatchStore((s) => s.sortBy)
-  const descending = useBatchStore((s) => s.sortDescending)
   const [collapsed, setCollapsed] = useState(false)
   const [following, setFollowing] = useState(true)
   const viewport = useRef<HTMLDivElement>(null)
   const chapters = useMemo(() => new Map(source?.chapters.map((c) => [c.path, c])), [source])
-  const paths = queue.length
-    ? queue
-    : sortBatchChapters(source?.chapters ?? [], sortBy, descending)
-        .filter((c) => !c.error && selected.includes(c.path))
-        .map((c) => c.path)
+  const paths = queue.length ? queue : selected
   const next = paths.findIndex(
     (path) => ['running', 'exporting'].includes(statuses[path]) || !statuses[path],
   )
