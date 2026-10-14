@@ -77,11 +77,13 @@ impl StageRunner {
             return Ok(StageOutcome::Skipped);
         }
         let accelerated = self.stages.uses_accelerator(job.stage);
+        let admission_started = Instant::now();
         let permit = if accelerated {
             Some(self.accelerator.acquire().await)
         } else {
             None
         };
+        let admission_elapsed = admission_started.elapsed();
         let _activity = if accelerated {
             let Some(activity) = job.stop.admit().await else {
                 return Ok(StageOutcome::Stopped);
@@ -93,7 +95,7 @@ impl StageRunner {
             }
             None
         };
-        let first = self.load_and_process(job, model).await;
+        let first = self.load_and_process(job, model, admission_elapsed).await;
         let failure = match first {
             Ok(outcome) => return Ok(outcome),
             Err(failure)
@@ -108,11 +110,15 @@ impl StageRunner {
         tracing::warn!(stage = %job.stage, page = %job.input.page(), error = %failure.error, "retrying stage after memory pressure");
         let _metric =
             tracing::info_span!(target: "koharu_metrics", "stage_retry", stage = %job.stage, model);
+        let recovery_started = Instant::now();
         let _permit = self.accelerator.recover(job.stage, &self.stages).await;
         if job.stop.stopped() {
             return Ok(StageOutcome::Stopped);
         }
-        match self.load_and_process(job, model).await {
+        match self
+            .load_and_process(job, model, recovery_started.elapsed())
+            .await
+        {
             Ok(outcome) => Ok(outcome),
             Err(failure) => Err(self.stage_error(job.stage, model, failure)),
         }
@@ -122,6 +128,7 @@ impl StageRunner {
         &self,
         job: &StageJob,
         model: &str,
+        admission_elapsed: Duration,
     ) -> std::result::Result<StageOutcome, AttemptFailure> {
         progress::emit(
             job.progress.as_ref(),
@@ -131,6 +138,7 @@ impl StageRunner {
                 model: model.to_owned(),
             },
         );
+        let loading_started = Instant::now();
         self.stages
             .load(job.stage)
             .await
@@ -138,6 +146,7 @@ impl StageRunner {
                 kind: ErrorKind::ModelLoad,
                 error,
             })?;
+        let loading_elapsed = loading_started.elapsed();
         if job.stop.stopped() {
             return Ok(StageOutcome::Stopped);
         }
@@ -149,7 +158,9 @@ impl StageRunner {
                 model: model.to_owned(),
             },
         );
-        self.stages
+        let processing_started = Instant::now();
+        let result = self
+            .stages
             .process(job.stage, job.input.clone())
             .await
             .map(|patch| {
@@ -158,11 +169,18 @@ impl StageRunner {
                 } else {
                     StageOutcome::Patch(patch)
                 }
-            })
-            .map_err(|error| AttemptFailure {
-                kind: ErrorKind::Processing,
-                error,
-            })
+            });
+        if job.stage == Stage::Detection {
+            tracing::info!(page = %job.input.page(), model,
+                admission_secs = admission_elapsed.as_secs_f64(),
+                load_secs = loading_elapsed.as_secs_f64(),
+                process_secs = processing_started.elapsed().as_secs_f64(),
+                success = result.is_ok(), "detection stage timing");
+        }
+        result.map_err(|error| AttemptFailure {
+            kind: ErrorKind::Processing,
+            error,
+        })
     }
 
     fn stage_error(&self, stage: Stage, model: &str, failure: AttemptFailure) -> PipelineError {
