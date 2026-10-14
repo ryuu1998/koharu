@@ -3,26 +3,28 @@
 import {
   ArrowLeft,
   Check,
+  Download,
   File,
   FileArchive,
   FolderOpen,
   LoaderCircle,
-  Save,
   Settings,
+  Upload,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { BatchProgress } from '@/components/batch/BatchProgress'
+import { BatchQueue } from '@/components/batch/BatchQueue'
+import { BatchViewControls } from '@/components/batch/BatchViewControls'
 import { call } from '@/lib/backend'
-import { startBatch, stopBatch, useBatchStore } from '@/lib/batch'
+import { sortBatchChapters, startBatch, stopBatch, useBatchStore } from '@/lib/batch'
 import { useKoharuStore } from '@/lib/store'
 import { commands } from '@koharu/bridge/protocol'
 import { Button } from '@koharu/ui/components/button'
 import { cn } from '@koharu/ui/lib/utils'
 
 export function BatchPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const source = useBatchStore((s) => s.source)
   const output = useBatchStore((s) => s.output)
   const selected = useBatchStore((s) => s.selected)
@@ -32,13 +34,14 @@ export function BatchPage() {
   const select = useBatchStore((s) => s.select)
   const running = useBatchStore((s) => s.running)
   const stopping = useBatchStore((s) => s.stopping)
-  const activePath = useBatchStore((s) => s.activePath)
+  const cardSize = useBatchStore((s) => s.cardSize)
+  const sortBy = useBatchStore((s) => s.sortBy)
+  const sortDescending = useBatchStore((s) => s.sortDescending)
   const statuses = useBatchStore((s) => s.statuses)
   const report = useBatchStore((s) => s.report)
   const setWorkspace = useKoharuStore((s) => s.setWorkspace)
   const [busy, setBusy] = useState<'source' | 'output' | null>(null)
-  const chapters = source?.chapters ?? []
-  const pending = chapters.filter((c) => !c.error && !exported.includes(c.path))
+  const chapters = sortBatchChapters(source?.chapters ?? [], sortBy, sortDescending)
 
   const browseSource = async () => {
     if (busy || running) return
@@ -89,101 +92,86 @@ export function BatchPage() {
             </>
           )}
         </div>
-        <div className='flex items-center gap-3'>
-          <div className='flex items-center gap-0.5' role='group' aria-label={t('batch.folders')}>
-            <Button
-              variant='ghost'
-              size='sm'
-              aria-label={t('batch.chooseSource')}
-              title={t('batch.source') + (source ? '\n' + source.path : '')}
-              disabled={!!busy || running}
-              onClick={() => void browseSource().catch(() => undefined)}
-              className='gap-1.5 text-[11px] text-foreground/80'
-            >
-              {busy === 'source' ? (
-                <LoaderCircle className='size-4' strokeWidth={1.75} />
-              ) : (
-                <FolderOpen className='size-4' strokeWidth={1.75} />
-              )}
-              {t('batch.source')}
-            </Button>
-            <Button
-              variant='ghost'
-              size='sm'
-              aria-label={t('batch.chooseOutput')}
-              title={t('batch.output') + (output ? '\n' + output : '')}
-              disabled={!!busy || running || !source}
-              onClick={() => void browseOutput().catch(() => undefined)}
-              className='gap-1.5 text-[11px] text-foreground/80'
-            >
-              {busy === 'output' ? (
-                <LoaderCircle className='size-4' strokeWidth={1.75} />
-              ) : (
-                <Save className='size-4' strokeWidth={1.75} />
-              )}
-              {t('batch.output')}
-            </Button>
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              aria-label={t('menu.settings')}
-              title={t('menu.settings')}
-              disabled={running}
-              onClick={() => setWorkspace('settings')}
-              className='text-muted-foreground'
-            >
-              <Settings className='size-4' strokeWidth={1.75} />
-            </Button>
-          </div>
-          <span className='h-4 w-px bg-border' aria-hidden='true' />
-          {running ? (
-            <Button
-              variant='outline'
-              size='sm'
-              className='min-w-24 text-[11px]'
-              disabled={stopping}
-              onClick={() => void stopBatch().catch(() => undefined)}
-            >
-              {t(stopping ? 'batch.stopping' : 'activity.stop')}
-            </Button>
-          ) : (
-            <Button
-              size='sm'
-              className='px-3 text-[11px]'
-              disabled={!!busy || !selected.length || !output}
-              onClick={() => void startBatch().catch(() => undefined)}
-            >
-              {t('batch.translate', { count: selected.length })}
-            </Button>
-          )}
-        </div>
+        {running ? (
+          <Button
+            variant='outline'
+            size='sm'
+            className='min-w-24 text-[11px]'
+            disabled={stopping}
+            onClick={() => void stopBatch().catch(() => undefined)}
+          >
+            {t(stopping ? 'batch.stopping' : 'activity.stop')}
+          </Button>
+        ) : (
+          <Button
+            size='sm'
+            className='px-3 text-[11px]'
+            disabled={!!busy || !selected.length || !output}
+            onClick={() => void startBatch().catch(() => undefined)}
+          >
+            {t('batch.translate', { count: selected.length })}
+          </Button>
+        )}
       </header>
+      <div
+        className='flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/70 bg-[var(--surface-toolbar)] px-4 py-2 sm:px-5'
+        role='toolbar'
+        aria-label={t('batch.toolbar')}
+      >
+        <div className='flex items-center gap-0.5' role='group' aria-label={t('batch.folders')}>
+          <Button
+            variant='ghost'
+            size='sm'
+            aria-label={t('batch.chooseSource')}
+            title={t('batch.source') + (source ? '\n' + source.path : '')}
+            disabled={!!busy || running}
+            onClick={() => void browseSource().catch(() => undefined)}
+            className='gap-1.5 text-[11px] text-foreground/80'
+          >
+            {busy === 'source' ? (
+              <LoaderCircle className='size-4' strokeWidth={1.75} />
+            ) : (
+              <Download className='size-4' strokeWidth={1.75} />
+            )}
+            {t('batch.source')}
+          </Button>
+          <Button
+            variant='ghost'
+            size='sm'
+            aria-label={t('batch.chooseOutput')}
+            title={t('batch.output') + (output ? '\n' + output : '')}
+            disabled={!!busy || running || !source}
+            onClick={() => void browseOutput().catch(() => undefined)}
+            className='gap-1.5 text-[11px] text-foreground/80'
+          >
+            {busy === 'output' ? (
+              <LoaderCircle className='size-4' strokeWidth={1.75} />
+            ) : (
+              <Upload className='size-4' strokeWidth={1.75} />
+            )}
+            {t('batch.output')}
+          </Button>
+        </div>
+        <span className='flex-1' />
+        <BatchViewControls busy={!!busy} />
+        <Button
+          variant='ghost'
+          size='icon-sm'
+          aria-label={t('menu.settings')}
+          title={t('menu.settings')}
+          disabled={running}
+          onClick={() => setWorkspace('settings')}
+          className='text-muted-foreground'
+        >
+          <Settings className='size-4' strokeWidth={1.75} />
+        </Button>
+      </div>
       <div className='flex min-h-0 flex-1 flex-col min-[800px]:flex-row'>
         <section className='flex min-h-0 min-w-0 flex-1 flex-col' aria-label={t('batch.chapters')}>
           <div className='flex min-h-11 shrink-0 items-center justify-between gap-3 px-4 sm:px-5'>
             <span className='text-[11px] text-muted-foreground tabular-nums'>
               {t('batch.selected', { count: selected.length, total: chapters.length })}
             </span>
-            <div className='flex items-center gap-1'>
-              <Button
-                variant='ghost'
-                size='xs'
-                className='text-[11px] text-muted-foreground'
-                disabled={!!busy || running || !pending.length}
-                onClick={() => select(pending.map((c) => c.path))}
-              >
-                {t('batch.selectAll')}
-              </Button>
-              <Button
-                variant='ghost'
-                size='xs'
-                className='text-[11px] text-muted-foreground'
-                disabled={!!busy || running || !selected.length}
-                onClick={() => select([])}
-              >
-                {t('batch.clear')}
-              </Button>
-            </div>
           </div>
           {!running && report && (
             <p role='status' className='px-4 pb-3 text-[11px] text-muted-foreground sm:px-5'>
@@ -215,7 +203,10 @@ export function BatchPage() {
                 </div>
               </div>
             ) : (
-              <div className='grid grid-cols-[repeat(auto-fill,112px)] gap-x-3 gap-y-2'>
+              <div
+                className='grid gap-x-3 gap-y-3'
+                style={{ gridTemplateColumns: `repeat(auto-fill, ${cardSize + 16}px)` }}
+              >
                 {chapters.map((chapter) => {
                   const done = exported.includes(chapter.path)
                   const status = statuses[chapter.path]
@@ -234,22 +225,31 @@ export function BatchPage() {
                     <label
                       key={chapter.path}
                       className={cn(
-                        'group relative flex w-28 min-w-0 flex-col rounded-lg p-2',
+                        'group relative flex min-w-0 flex-col rounded-lg p-2',
                         !running &&
                           !busy &&
                           !chapter.error &&
                           !done &&
                           'cursor-pointer hover:bg-muted/50',
-                        active && 'bg-primary/[0.04] ring-1 ring-primary/30 ring-inset',
+                        selected.includes(chapter.path) &&
+                          !done &&
+                          'bg-primary/[0.035] ring-1 ring-primary/15 ring-inset',
+                        active && 'bg-primary/[0.06] ring-primary/35',
+                        done && 'bg-green-600/[0.055] ring-1 ring-green-600/25 ring-inset',
                       )}
+                      style={{ width: cardSize + 16 }}
                     >
-                      <span className='relative grid h-32 w-24 shrink-0 place-items-center overflow-hidden rounded bg-[var(--surface-well)]'>
+                      <span
+                        className='relative grid shrink-0 place-items-center overflow-hidden rounded bg-[var(--surface-well)]'
+                        style={{ width: cardSize, height: (cardSize * 4) / 3 }}
+                      >
                         {chapter.thumbnail ? (
                           <img
                             src={chapter.thumbnail}
                             alt=''
                             loading='lazy'
-                            className='h-32 w-24 object-contain'
+                            className='object-contain'
+                            style={{ width: cardSize, height: (cardSize * 4) / 3 }}
                           />
                         ) : (
                           <FileArchive
@@ -295,6 +295,17 @@ export function BatchPage() {
                           )}
                         </span>
                       </span>
+                      <span className='mt-1 truncate text-[10px] text-muted-foreground tabular-nums'>
+                        {sortBy === 'size'
+                          ? `${(chapter.size / 1048576).toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })} MB`
+                          : sortBy === 'added'
+                            ? chapter.created_at === null
+                              ? t('batch.unknownDate')
+                              : new Date(chapter.created_at).toLocaleDateString(
+                                  i18n.resolvedLanguage,
+                                )
+                            : t('batch.pages', { count: chapter.pages })}
+                      </span>
                       <span
                         className='mt-2 line-clamp-2 h-8 text-[11px] leading-4 font-medium break-words'
                         title={chapter.name}
@@ -333,7 +344,7 @@ export function BatchPage() {
             )}
           </div>
         </section>
-        <BatchProgress key={running ? activePath : 'idle'} />
+        <BatchQueue />
       </div>
     </main>
   )

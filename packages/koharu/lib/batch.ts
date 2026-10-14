@@ -6,29 +6,49 @@ import { create } from 'zustand'
 import { call } from '@/lib/backend'
 import {
   commands,
+  type BatchChapter,
   type BatchEvent,
   type BatchReport,
   type BatchSource,
 } from '@koharu/bridge/protocol'
 
 type ChapterStatus = 'running' | 'exporting' | 'translated' | 'skipped' | 'failed' | 'stopped'
+export type BatchSort = 'added' | 'size' | 'pages'
+
+const chapterNames = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
+export function sortBatchChapters(
+  chapters: readonly BatchChapter[],
+  sortBy: BatchSort,
+  descending: boolean,
+): BatchChapter[] {
+  return [...chapters].sort((a, b) => {
+    const left = sortBy === 'added' ? a.created_at : a[sortBy]
+    const right = sortBy === 'added' ? b.created_at : b[sortBy]
+    if (left === null && right !== null) return 1
+    if (right === null && left !== null) return -1
+    const difference = left !== null && right !== null ? left - right : 0
+    return (
+      (descending ? -difference : difference) ||
+      chapterNames.compare(a.name, b.name) ||
+      a.path.localeCompare(b.path)
+    )
+  })
+}
 
 interface BatchStore {
   source: BatchSource | null
   output: string | null
   selected: string[]
+  queue: string[]
+  cardSize: number
+  sortBy: BatchSort
+  sortDescending: boolean
   exported: string[]
   running: boolean
   stopping: boolean
-  activeName: string | null
   activePath: string | null
   progress: Extract<BatchEvent, { event: 'chapter_progress' }> | null
-  stages: Partial<
-    Record<
-      Extract<BatchEvent, { event: 'chapter_progress' }>['stage'],
-      Extract<BatchEvent, { event: 'chapter_progress' }>
-    >
-  >
   completedChapters: number
   totalChapters: number
   statuses: Record<string, ChapterStatus>
@@ -36,19 +56,23 @@ interface BatchStore {
   setSource: (source: BatchSource) => void
   setOutput: (output: string) => Promise<void>
   select: (paths: string[]) => void
+  setCardSize: (size: number) => void
+  setSort: (sortBy: BatchSort) => void
 }
 
 export const useBatchStore = create<BatchStore>()((set, get) => ({
   source: null,
   output: null,
   selected: [],
+  queue: [],
+  cardSize: 96,
+  sortBy: 'added',
+  sortDescending: true,
   exported: [],
   running: false,
   stopping: false,
-  activeName: null,
   activePath: null,
   progress: null,
-  stages: {},
   completedChapters: 0,
   totalChapters: 0,
   statuses: {},
@@ -63,7 +87,10 @@ export const useBatchStore = create<BatchStore>()((set, get) => ({
       exported: source.exported,
       report: null,
       progress: null,
-      stages: {},
+      activePath: null,
+      queue: [],
+      completedChapters: 0,
+      totalChapters: 0,
       statuses: {},
     }),
   setOutput: async (output) => {
@@ -80,18 +107,38 @@ export const useBatchStore = create<BatchStore>()((set, get) => ({
       exported,
       statuses: {},
       report: null,
+      activePath: null,
+      progress: null,
+      queue: [],
+      completedChapters: 0,
+      totalChapters: 0,
       selected: source.chapters
         .filter((chapter) => !chapter.error && !exported.includes(chapter.path))
         .map((chapter) => chapter.path),
     })
   },
-  select: (selected) => set({ selected: [...new Set(selected)] }),
+  select: (selected) => {
+    if (get().running) return
+    set({
+      selected: [...new Set(selected)],
+      queue: [],
+      report: null,
+      activePath: null,
+      progress: null,
+    })
+  },
+  setCardSize: (size) => set({ cardSize: Math.min(160, Math.max(64, Math.round(size / 8) * 8)) }),
+  setSort: (sortBy) =>
+    set((state) => ({
+      sortBy,
+      sortDescending: state.sortBy === sortBy ? !state.sortDescending : true,
+    })),
 }))
 
 export async function startBatch(): Promise<void> {
   const state = useBatchStore.getState()
   if (state.running || !state.source || !state.output || !state.selected.length) return
-  const chapters = state.source.chapters
+  const chapters = sortBatchChapters(state.source.chapters, state.sortBy, state.sortDescending)
     .filter((chapter) => !chapter.error && state.selected.includes(chapter.path))
     .map((chapter) => chapter.path)
   if (!chapters.length) return
@@ -100,9 +147,8 @@ export async function startBatch(): Promise<void> {
     stopping: false,
     report: null,
     progress: null,
-    stages: {},
-    activeName: null,
     activePath: null,
+    queue: chapters,
     statuses: {},
     completedChapters: 0,
     totalChapters: chapters.length,
@@ -110,21 +156,15 @@ export async function startBatch(): Promise<void> {
   try {
     const events = new Channel<BatchEvent>((event) => {
       if (event.event === 'started') useBatchStore.setState({ totalChapters: event.total_chapters })
-      else if (event.event === 'chapter_progress')
-        useBatchStore.setState((state) => ({
-          progress: event,
-          stages: { ...state.stages, [event.stage]: event },
-        }))
+      else if (event.event === 'chapter_progress') useBatchStore.setState({ progress: event })
       else if (event.event === 'finished') useBatchStore.setState({ report: event.report })
       else {
         const path = chapters[event.index]
         if (!path) return
         if (event.event === 'chapter_started') {
           useBatchStore.setState((state) => ({
-            activeName: event.name,
             activePath: path,
             progress: null,
-            stages: {},
             statuses: { ...state.statuses, [path]: 'running' },
           }))
         } else if (event.event === 'chapter_exporting') {

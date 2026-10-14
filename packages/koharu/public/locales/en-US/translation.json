@@ -542,15 +542,15 @@
     "tab": "Batch",
     "title": "Batch translation",
     "folders": "Batch folders",
-    "source": "Source folder",
-    "output": "Export folder",
+    "source": "Import folder",
+    "output": "Output folder",
     "chooseSource": "Choose source folder",
     "chooseOutput": "Choose export folder",
     "choose": "Choose",
     "chapters": "Chapters",
     "selected": "{{count}} selected of {{total}}",
     "selectAll": "Select all",
-    "clear": "Clear",
+    "deselectAll": "Deselect all",
     "emptyTitle": "Choose your chapters",
     "emptyHint": "Select a folder containing CBZ chapters to see their covers and choose what to translate.",
     "emptyFolder": "No CBZ chapters found",
@@ -574,7 +574,37 @@
     "failed": "Failed",
     "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed.",
     "alreadyTranslated": "Already translated",
-    "showDetails": "Expand active chapter",
-    "hideDetails": "Collapse active chapter"
+    "toolbar": "Batch toolbar",
+    "cards": "Cards",
+    "cardSize": "Card size",
+    "unknownDate": "Unknown date",
+    "queue": "Queue",
+    "queueChapters": "Selected chapter queue",
+    "showQueue": "Expand queue",
+    "hideQueue": "Collapse queue",
+    "followActive": "Return to active",
+    "upNext": "Up next",
+    "waiting": "In queue",
+    "sort": {
+      "label": "Sort chapters",
+      "choose": "Choose sorting",
+      "reverse": "{{direction}}. Reverse order",
+      "addedHint": "File creation time. Unavailable dates appear last.",
+      "added": {
+        "label": "Time added",
+        "ascending": "Oldest first",
+        "descending": "Newest first"
+      },
+      "size": {
+        "label": "File size",
+        "ascending": "Smallest first",
+        "descending": "Largest first"
+      },
+      "pages": {
+        "label": "Page count",
+        "ascending": "Fewest pages first",
+        "descending": "Most pages first"
+      }
+    }
   }
 }
