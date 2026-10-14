@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -31,25 +31,27 @@ export function BatchProgress() {
     <aside
       aria-label={t('batch.progress')}
       className={cn(
-        'order-first flex shrink-0 flex-col border-b border-border/70 bg-muted/40 min-[900px]:order-last min-[900px]:min-h-0 min-[900px]:border-s min-[900px]:border-b-0',
-        expanded ? 'min-[900px]:w-[280px] lg:w-[304px] xl:w-[328px]' : 'min-[900px]:w-14',
+        'order-first flex shrink-0 flex-col border-b border-border/70 bg-[var(--surface-panel)] min-[800px]:order-last min-[800px]:min-h-0 min-[800px]:border-s min-[800px]:border-b-0',
+        expanded ? 'min-[800px]:w-[248px]' : 'min-[800px]:w-9',
       )}
     >
-      <div className={cn('flex items-center gap-2 px-5 py-4', !expanded && 'min-[900px]:px-3')}>
-        <div className={cn('min-w-0 flex-1', !expanded && 'min-[900px]:hidden')}>
-          <h2 className='text-[13px] font-semibold'>{t('batch.progress')}</h2>
-          <p className='mt-1 text-[11px] text-muted-foreground tabular-nums'>
-            {t('batch.chapterCount', { count: done, total })}
-          </p>
-          <Progress
-            value={total ? (done / total) * 100 : 0}
-            aria-label={t('batch.progress')}
-            className='mt-3 [&_[data-slot=progress-track]]:h-0.5'
-          />
-        </div>
+      <div
+        className={cn(
+          'flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-4',
+          !expanded && 'min-[800px]:justify-center min-[800px]:px-1',
+        )}
+      >
+        <h2
+          className={cn(
+            'min-w-0 flex-1 truncate text-[11px] font-medium',
+            !expanded && 'min-[800px]:hidden',
+          )}
+        >
+          {t('batch.progress')}
+        </h2>
         <Button
           variant='ghost'
-          size='icon'
+          size='icon-xs'
           disabled={!path}
           aria-expanded={expanded}
           aria-controls='batch-active-details'
@@ -58,58 +60,70 @@ export function BatchProgress() {
           className='text-muted-foreground aria-expanded:bg-transparent'
           onClick={() => setCollapsed(expanded)}
         >
-          {expanded ? (
-            <PanelRightClose className='size-[18px]' strokeWidth={1.5} />
-          ) : (
-            <PanelRightOpen className='size-[18px]' strokeWidth={1.5} />
-          )}
+          <ChevronDown
+            className={cn(
+              'size-3.5',
+              expanded ? 'rotate-180 min-[800px]:-rotate-90' : 'min-[800px]:rotate-90',
+            )}
+            strokeWidth={1.75}
+          />
         </Button>
       </div>
       {!expanded && (
-        <p className='hidden px-3 py-2 text-center text-[11px] text-muted-foreground tabular-nums min-[900px]:block'>
+        <p className='hidden py-3 text-center text-[9px] text-muted-foreground tabular-nums min-[800px]:block'>
           {Math.floor(percent)}%
         </p>
       )}
       <div
         id='batch-active-details'
         hidden={!expanded}
-        className='min-h-0 overflow-y-auto px-5 pb-6 min-[900px]:px-6'
+        className='min-h-0 flex-1 overflow-y-auto p-4'
       >
-        <div className='grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-6 min-[900px]:block'>
+        <div className='mb-4'>
+          <p className='mb-2 text-[10px] text-muted-foreground tabular-nums'>
+            {t('batch.chapterCount', { count: done, total })}
+          </p>
+          <Progress
+            value={total ? (done / total) * 100 : 0}
+            aria-label={t('batch.progress')}
+            className='[&_[data-slot=progress-track]]:h-0.5'
+          />
+        </div>
+        <div className='grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-5 min-[800px]:block'>
           <div>
-            <div className='flex items-center gap-4 min-[900px]:mt-5 min-[900px]:flex-col min-[900px]:items-start min-[900px]:gap-5 min-[900px]:[@media(max-height:760px)]:mt-2 min-[900px]:[@media(max-height:760px)]:flex-row min-[900px]:[@media(max-height:760px)]:items-center min-[900px]:[@media(max-height:760px)]:gap-4'>
+            <div className='flex items-start gap-3'>
               {chapter?.thumbnail && (
                 <img
                   src={chapter.thumbnail}
                   alt=''
-                  className='hidden h-40 max-w-32 rounded-md object-contain object-left shadow-sm min-[900px]:block min-[900px]:[@media(max-height:760px)]:h-20 min-[900px]:[@media(max-height:760px)]:max-w-16'
+                  className='h-14 w-10 shrink-0 rounded object-contain'
                 />
               )}
-              <div className='min-w-0'>
+              <div className='min-w-0 flex-1'>
                 <p
-                  className='line-clamp-3 text-[15px] leading-snug font-medium break-words'
+                  className='line-clamp-3 text-xs leading-[18px] font-medium break-words'
                   title={active ?? undefined}
                 >
                   {active?.replace(/\.cbz$/i, '') ?? t('batch.starting')}
                 </p>
-                <p role='status' className='mt-2 text-xs text-muted-foreground'>
+                <p role='status' className='mt-1 text-[10px] leading-4 text-muted-foreground'>
                   {t(stopping ? 'batch.stopping' : exporting ? 'batch.exporting' : 'batch.running')}
                 </p>
               </div>
             </div>
-            <div className='mt-4 min-[900px]:mt-7 min-[900px]:[@media(max-height:760px)]:mt-4'>
-              <div className='mb-2 flex items-center justify-between gap-3 text-[11px] text-muted-foreground'>
+            <div className='mt-4'>
+              <div className='mb-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground'>
                 <span>{t('batch.chapterProgress')}</span>
                 <span className='tabular-nums'>{Math.floor(percent)}%</span>
               </div>
               <Progress
                 value={percent}
                 aria-label={t('batch.chapterProgress')}
-                className='[&_[data-slot=progress-track]]:h-1.5'
+                className='[&_[data-slot=progress-track]]:h-0.5'
               />
             </div>
           </div>
-          <div className='grid grid-cols-2 gap-x-5 gap-y-5 min-[900px]:mt-8 min-[900px]:grid-cols-1 min-[900px]:gap-y-6 min-[900px]:[@media(max-height:760px)]:mt-6 min-[900px]:[@media(max-height:760px)]:gap-y-5'>
+          <div className='grid grid-cols-2 gap-x-4 gap-y-4 min-[800px]:mt-6 min-[800px]:grid-cols-1 min-[800px]:gap-y-5'>
             {(['detection', 'ocr', 'translation', 'inpainting'] as const).map((stage) => {
               const current = stages[stage]
               const completed = current?.completed_pages ?? 0
@@ -117,18 +131,18 @@ export function BatchProgress() {
               const finished = pages > 0 && completed === pages
               return (
                 <div key={stage}>
-                  <div className='mb-2 flex items-center justify-between gap-3 text-xs'>
-                    <span className='flex items-center gap-2'>
+                  <div className='mb-2 flex items-center justify-between gap-2 text-[11px]'>
+                    <span className='flex items-center gap-1.5'>
                       {t('phase.' + stage)}
                       {finished && (
                         <Check
-                          className='size-3.5 text-green-700 dark:text-green-300'
-                          strokeWidth={2}
+                          className='size-3 text-green-700 dark:text-green-300'
+                          strokeWidth={1.75}
                           aria-hidden='true'
                         />
                       )}
                     </span>
-                    <span className='text-[11px] text-muted-foreground tabular-nums'>
+                    <span className='text-[10px] text-muted-foreground tabular-nums'>
                       {completed} / {pages}
                     </span>
                   </div>
@@ -136,7 +150,8 @@ export function BatchProgress() {
                     value={pages ? (completed / pages) * 100 : 0}
                     aria-label={t('phase.' + stage)}
                     className={cn(
-                      finished && '[&_[data-slot=progress-indicator]]:bg-foreground/30',
+                      '[&_[data-slot=progress-track]]:h-0.5',
+                      finished && '[&_[data-slot=progress-indicator]]:bg-foreground/25',
                     )}
                   />
                 </div>
