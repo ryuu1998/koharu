@@ -208,7 +208,11 @@ export async function startBatch(): Promise<void> {
     const events = new Channel<BatchEvent>((event) => {
       if (useBatchStore.getState().runId !== id) return
       if (event.event === 'queue_changed') {
-        useBatchStore.setState({ queue: event.paths, totalChapters: event.paths.length })
+        useBatchStore.setState({
+          queue: event.paths,
+          selected: event.paths,
+          totalChapters: event.paths.length,
+        })
       } else if (event.event === 'started')
         useBatchStore.setState({ totalChapters: event.total_chapters })
       else if (event.event === 'chapter_progress') {
@@ -272,6 +276,7 @@ export async function startBatch(): Promise<void> {
       }
       return {
         running: false,
+        runId: null,
         stopping: false,
         pauseState: 'playing',
         statuses,

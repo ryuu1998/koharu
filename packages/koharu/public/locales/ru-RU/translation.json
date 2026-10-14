@@ -625,6 +625,10 @@
     "otherOutput": "Choose another folder",
     "adding": "Adding…",
     "addCount": "Add {{count}} chapters",
-    "addRemaining": "Add remaining"
+    "addRemaining": "Add remaining",
+    "noNewArchives": "These archives are already in your library.",
+    "noReadableArchives": "No readable CBZ archives in this folder.",
+    "addCount_one": "Add {{count}} chapter",
+    "addCount_other": "Add {{count}} chapters"
   }
 }

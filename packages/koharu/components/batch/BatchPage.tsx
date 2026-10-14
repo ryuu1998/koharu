@@ -69,7 +69,16 @@ export function BatchPage() {
       const source = await call(commands.browseBatchSource)
       if (source) {
         if (previous.source)
-          setPendingImport({ source, runId: previous.running ? previous.runId : null })
+          setPendingImport({
+            source: {
+              ...source,
+              chapters: source.chapters.filter(
+                (chapter) =>
+                  !previous.source?.chapters.some((existing) => existing.path === chapter.path),
+              ),
+            },
+            runId: previous.running ? previous.runId : null,
+          })
         else setSource(source)
       }
     } finally {

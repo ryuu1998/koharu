@@ -279,7 +279,14 @@ describe('batch chapter browser', () => {
       })
       return null
     })
-    const reorder = vi.spyOn(commands, 'reorderBatch').mockResolvedValue(null)
+    const reorder = vi
+      .spyOn(commands, 'reorderBatch')
+      .mockImplementation(async (_id, path, before) => {
+        const paths = useBatchStore.getState().queue.filter((entry) => entry !== path)
+        paths.splice(before ? paths.indexOf(before) : paths.length, 0, path)
+        events?.onmessage({ event: 'queue_changed', paths })
+        return null
+      })
     vi.spyOn(commands, 'getBatchExports').mockResolvedValue([])
     render(<BatchPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Translate 2 chapters' }))
@@ -322,9 +329,27 @@ describe('batch chapter browser', () => {
       await addBatchSource(imported, imported.default_output, useBatchStore.getState().runId)
     })
     expect(append).toHaveBeenCalledTimes(2)
+    const waitingOrder = useBatchStore.getState().queue.slice()
     await act(async () => {
       finish?.({ completed: 0, skipped: 0, failures: [], stopped: true })
     })
+    expect(useBatchStore.getState().selected).toEqual(waitingOrder)
+    expect(useBatchStore.getState().runId).toBeNull()
+  })
+
+  it('counts only new chapters when importing the same folder again', async () => {
+    useBatchStore.getState().setSource(source)
+    vi.spyOn(commands, 'browseBatchSource').mockResolvedValue({
+      ...source,
+      chapters: [
+        ...source.chapters,
+        { ...source.chapters[0], path: 'chapter-new.cbz', name: 'chapter-new.cbz' },
+      ],
+    })
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add archives' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add archives' })
+    expect(within(dialog).getByRole('button', { name: 'Add 1 chapter' })).toBeEnabled()
   })
 
   it('starts only selected healthy chapters and keeps stop active until completion', async () => {

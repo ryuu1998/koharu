@@ -95,6 +95,11 @@ export function BatchImportDialog({
             {t('batch.otherOutput')}
           </Button>
         </fieldset>
+        {!count && (
+          <p role='status' className='text-xs text-muted-foreground'>
+            {t(source.chapters.length ? 'batch.noReadableArchives' : 'batch.noNewArchives')}
+          </p>
+        )}
         {error && (
           <p role='alert' className='text-xs text-destructive'>
             {error}
