@@ -2,6 +2,7 @@ use std::{
     fs,
     io::{Cursor, Read},
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 use anyhow::{Context as _, Result, ensure};
@@ -31,6 +32,7 @@ pub struct BatchChapter {
     pub name: String,
     #[specta(type = f64)]
     pub size: u64,
+    pub created_at: Option<f64>,
     #[specta(type = f64)]
     pub pages: usize,
     pub thumbnail: Option<String>,
@@ -145,6 +147,7 @@ fn scan(path: PathBuf) -> Result<BatchSource> {
     let chapters = paths
         .par_iter()
         .map(|path| {
+            let metadata = fs::metadata(path).ok();
             let mut chapter = BatchChapter {
                 path: path.clone(),
                 name: path
@@ -152,7 +155,12 @@ fn scan(path: PathBuf) -> Result<BatchSource> {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into_owned(),
-                size: fs::metadata(path).map_or(0, |metadata| metadata.len()),
+                size: metadata.as_ref().map_or(0, fs::Metadata::len),
+                created_at: metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.created().ok())
+                    .and_then(|created| created.duration_since(UNIX_EPOCH).ok())
+                    .map(|created| created.as_secs_f64() * 1000.0),
                 pages: 0,
                 thumbnail: None,
                 error: None,
