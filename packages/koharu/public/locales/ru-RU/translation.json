@@ -452,7 +452,10 @@
       "targetLanguageDescription": "Выберите язык, на который нужно перевести текст.",
       "title": "Перевод",
       "translationModel": "Модель перевода",
-      "translationModelDescription": "Выберите модель для перевода текста."
+      "translationModelDescription": "Выберите модель для перевода текста.",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "Добавить семейство шрифтов",

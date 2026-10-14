@@ -452,7 +452,10 @@
       "targetLanguageDescription": "選擇文字要翻譯成的語言。",
       "title": "譯文",
       "translationModel": "翻譯模型",
-      "translationModelDescription": "選擇用於翻譯文字的模型。"
+      "translationModelDescription": "選擇用於翻譯文字的模型。",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "新增字型家族",

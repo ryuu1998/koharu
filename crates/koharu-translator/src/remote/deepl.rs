@@ -81,6 +81,7 @@ pub(super) async fn translate(
                 format!("DeepL-Auth-Key {}", api_key.expose_secret()),
             )
             .form(&form),
+        disposition,
     )
     .await?;
     Ok(response
@@ -153,6 +154,17 @@ fn source(language: Language) -> Option<&'static str> {
     })
 }
 
+pub(super) fn disposition(
+    status: reqwest::StatusCode,
+    body: &serde_json::Value,
+) -> super::Disposition {
+    if status.as_u16() == 456 {
+        super::Disposition::Quota
+    } else {
+        super::http_disposition(status, body)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +173,27 @@ mod tests {
     fn unsupported_languages_are_not_substituted() {
         assert_eq!(target(Language::Filipino), None);
         assert_eq!(target(Language::English), Some("EN-US"));
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    #[test]
+    fn classifies_provider_errors() {
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::from_u16(456).unwrap(),
+                &serde_json::Value::Null
+            ),
+            super::super::Disposition::Quota
+        );
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &serde_json::Value::Null
+            ),
+            super::super::Disposition::Retry(None)
+        );
     }
 }

@@ -28,6 +28,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let response: ModelsResponse = send_json(
         "deepseek",
         client.get(MODELS_URL).bearer_auth(api_key.expose_secret()),
+        super::http_disposition,
     )
     .await?;
     Ok(response
@@ -59,6 +60,7 @@ pub(super) async fn translate(
             .post(URL)
             .bearer_auth(api_key.expose_secret())
             .json(&body),
+        super::http_disposition,
     )
     .await?;
     let text = response

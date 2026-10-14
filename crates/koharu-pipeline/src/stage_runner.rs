@@ -82,8 +82,16 @@ impl StageRunner {
         } else {
             None
         };
-        let Some(_activity) = job.stop.admit().await else {
-            return Ok(StageOutcome::Stopped);
+        let _activity = if accelerated {
+            let Some(activity) = job.stop.admit().await else {
+                return Ok(StageOutcome::Stopped);
+            };
+            Some(activity)
+        } else {
+            if !job.stop.ready().await {
+                return Ok(StageOutcome::Stopped);
+            }
+            None
         };
         let first = self.load_and_process(job, model).await;
         let failure = match first {

@@ -452,7 +452,10 @@
       "targetLanguageDescription": "Escolha o idioma para o qual o texto será traduzido.",
       "title": "Tradução",
       "translationModel": "Modelo de tradução",
-      "translationModelDescription": "Escolha o modelo usado para traduzir texto."
+      "translationModelDescription": "Escolha o modelo usado para traduzir texto.",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "Adicionar família de fontes",

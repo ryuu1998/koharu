@@ -452,7 +452,10 @@
       "targetLanguageDescription": "テキストの翻訳先言語を選択します。",
       "title": "翻訳",
       "translationModel": "翻訳モデル",
-      "translationModelDescription": "テキストの翻訳に使用するモデルを選択します。"
+      "translationModelDescription": "テキストの翻訳に使用するモデルを選択します。",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "フォントファミリーを追加",

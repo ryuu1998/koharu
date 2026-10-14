@@ -138,6 +138,7 @@ const preferences: Preferences = {
     detection: { model: 'koharu-layout-rfdetr-seg-2xl' },
     ocr: { model: 'paddleocr-vl-1.6' },
     translation: {
+      remote: { concurrency: 6 },
       model: {
         provider: 'local',
         model: 'gemma4-e2b-it',
@@ -1430,6 +1431,44 @@ describe('greenfield editor', () => {
     expect(screen.getByLabelText('Translation instructions')).toHaveClass(
       'field-sizing-fixed',
       'overflow-y-auto',
+    )
+  })
+
+  it('bounds and persists cloud request concurrency', async () => {
+    installProject()
+    const configured: Preferences = {
+      ...preferences,
+      pipeline: {
+        ...preferences.pipeline,
+        translation: {
+          ...preferences.pipeline.translation,
+          model: {
+            ...preferences.pipeline.translation.model,
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+          },
+        },
+      },
+    }
+    useKoharuStore.setState({ workspace: 'settings', preferences: configured })
+    const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(configured)
+    render(
+      <ThemeProvider attribute='class'>
+        <SettingsPage />
+      </ThemeProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Translation' }))
+    const concurrency = screen.getByRole('spinbutton', { name: 'Simultaneous requests' })
+    expect(concurrency).toHaveValue(6)
+    fireEvent.change(concurrency, { target: { value: '99' } })
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          translation: expect.objectContaining({ remote: { concurrency: 16 } }),
+        }),
+        configured.providers,
+        configured.typesetting,
+      ),
     )
   })
 

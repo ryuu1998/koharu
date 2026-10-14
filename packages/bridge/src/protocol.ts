@@ -508,6 +508,10 @@ export type RasterLayerKind = "cleanup" | "paint";
 
 export type Reasoning = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
+export type RemoteConfig = {
+	concurrency?: number,
+};
+
 export type Revision = number;
 
 export type RoremMixedConfig = {
@@ -560,6 +564,7 @@ export type Translation = {
 };
 
 export type TranslationConfig = {
+	remote?: RemoteConfig,
 	model: ModelSelection,
 	generation: GenerationConfig,
 	target_language: string,

@@ -452,7 +452,10 @@
       "targetLanguageDescription": "选择文本要翻译成的语言。",
       "title": "译文",
       "translationModel": "翻译模型",
-      "translationModelDescription": "选择用于翻译文本的模型。"
+      "translationModelDescription": "选择用于翻译文本的模型。",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "添加字体系列",

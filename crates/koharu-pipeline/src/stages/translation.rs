@@ -26,7 +26,7 @@ impl StageProcessor for Processor {
         if self.config.model.provider == Provider::Local {
             1
         } else {
-            6
+            self.config.remote.parallelism()
         }
     }
 
@@ -76,7 +76,13 @@ impl StageProcessor for Processor {
         }
         let (provider, translated) = self
             .translator
-            .translate(&self.config.model, self.config.generation, request)
+            .translate(
+                &self.config.model,
+                self.config.generation,
+                request,
+                &input.control,
+                &self.config.remote,
+            )
             .await?;
         let language = LanguageTag::new(self.config.target_language.tag())?;
         let generated = generation(PRODUCER, provider)?;

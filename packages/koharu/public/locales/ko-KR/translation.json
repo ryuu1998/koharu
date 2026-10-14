@@ -452,7 +452,10 @@
       "targetLanguageDescription": "텍스트를 번역할 언어를 선택합니다.",
       "title": "번역",
       "translationModel": "번역 모델",
-      "translationModelDescription": "텍스트 번역에 사용할 모델을 선택합니다."
+      "translationModelDescription": "텍스트 번역에 사용할 모델을 선택합니다.",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "글꼴 패밀리 추가",
