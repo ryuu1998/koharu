@@ -572,6 +572,7 @@
     "stopped": "Stopped.",
     "running": "Translating",
     "exporting": "Exporting",
+    "rendering": "Renderização",
     "translated": "Translated",
     "skipped": "Skipped existing output",
     "failed": "Failed",
