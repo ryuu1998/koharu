@@ -247,7 +247,7 @@ export function BatchPage() {
                             src={chapter.thumbnail}
                             alt=''
                             loading='lazy'
-                            className='size-full object-contain'
+                            className='h-[88px] w-16 object-contain'
                           />
                         ) : (
                           <FileArchive
