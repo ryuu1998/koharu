@@ -613,6 +613,15 @@
     "pause": "Pause",
     "pausing": "Pausing…",
     "paused": "Paused",
-    "resume": "Resume"
+    "resume": "Resume",
+    "stageProgress": "Chapter stages",
+    "dragToReorder": "Drag to reorder",
+    "addArchives": "Add archives",
+    "useCurrentOutput": "Current output folder",
+    "useImportOutput": "This import’s output folder",
+    "otherOutput": "Choose another folder",
+    "adding": "Adding…",
+    "addCount": "Add {{count}} chapters",
+    "addRemaining": "Add remaining"
   }
 }

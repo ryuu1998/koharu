@@ -72,9 +72,9 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
         variant='ghost'
         size='sm'
         className='text-[11px]'
-        disabled={busy || running || !pending.length}
+        disabled={busy || !pending.length || (running && allSelected)}
         onClick={() =>
-          select(
+          void select(
             allSelected
               ? []
               : [
@@ -83,10 +83,10 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
                     .filter((c) => !selected.includes(c.path))
                     .map((c) => c.path),
                 ],
-          )
+          ).catch(() => undefined)
         }
       >
-        {t(allSelected ? 'batch.deselectAll' : 'batch.selectAll')}
+        {t(running ? 'batch.addRemaining' : allSelected ? 'batch.deselectAll' : 'batch.selectAll')}
       </Button>
       <div className='flex shrink-0 items-center' role='group' aria-label={t('batch.sort.label')}>
         <Button

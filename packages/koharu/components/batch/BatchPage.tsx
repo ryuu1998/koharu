@@ -16,10 +16,12 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { BatchImportDialog } from '@/components/batch/BatchImportDialog'
 import { BatchQueue } from '@/components/batch/BatchQueue'
 import { BatchViewControls } from '@/components/batch/BatchViewControls'
 import { call } from '@/lib/backend'
 import {
+  addBatchSource,
   pauseBatch,
   resumeBatch,
   sortBatchChapters,
@@ -28,7 +30,7 @@ import {
   useBatchStore,
 } from '@/lib/batch'
 import { useKoharuStore } from '@/lib/store'
-import { commands } from '@koharu/bridge/protocol'
+import { commands, type BatchSource } from '@koharu/bridge/protocol'
 import { Button } from '@koharu/ui/components/button'
 import { cn } from '@koharu/ui/lib/utils'
 
@@ -51,15 +53,25 @@ export function BatchPage() {
   const statuses = useBatchStore((s) => s.statuses)
   const report = useBatchStore((s) => s.report)
   const setWorkspace = useKoharuStore((s) => s.setWorkspace)
+  const [pendingImport, setPendingImport] = useState<{
+    source: BatchSource
+    runId: string | null
+  } | null>(null)
+  const queue = useBatchStore((s) => s.queue)
   const [busy, setBusy] = useState<'source' | 'output' | null>(null)
   const chapters = sortBatchChapters(source?.chapters ?? [], sortBy, sortDescending)
 
   const browseSource = async () => {
-    if (busy || running) return
+    if (busy || stopping) return
+    const previous = useBatchStore.getState()
     setBusy('source')
     try {
       const source = await call(commands.browseBatchSource)
-      if (source) setSource(source)
+      if (source) {
+        if (previous.source)
+          setPendingImport({ source, runId: previous.running ? previous.runId : null })
+        else setSource(source)
+      }
     } finally {
       setBusy(null)
     }
@@ -158,9 +170,9 @@ export function BatchPage() {
           <Button
             variant='ghost'
             size='sm'
-            aria-label={t('batch.chooseSource')}
+            aria-label={t(source ? 'batch.addArchives' : 'batch.chooseSource')}
             title={t('batch.source') + (source ? '\n' + source.path : '')}
-            disabled={!!busy || running}
+            disabled={!!busy || stopping}
             onClick={() => void browseSource().catch(() => undefined)}
             className='gap-1.5 text-[11px] text-foreground/80'
           >
@@ -169,7 +181,7 @@ export function BatchPage() {
             ) : (
               <Download className='size-4' strokeWidth={1.75} />
             )}
-            {t('batch.source')}
+            {t(source ? 'batch.addArchives' : 'batch.source')}
           </Button>
           <Button
             variant='ghost'
@@ -202,6 +214,17 @@ export function BatchPage() {
           <Settings className='size-4' strokeWidth={1.75} />
         </Button>
       </div>
+      {pendingImport && output && (
+        <BatchImportDialog
+          source={pendingImport.source}
+          currentOutput={output}
+          onClose={() => setPendingImport(null)}
+          onImport={async (destination) => {
+            await addBatchSource(pendingImport.source, destination, pendingImport.runId)
+            setPendingImport(null)
+          }}
+        />
+      )}
       <div className='flex min-h-0 flex-1 flex-col min-[800px]:flex-row'>
         <section className='flex min-h-0 min-w-0 flex-1 flex-col' aria-label={t('batch.chapters')}>
           <div className='flex min-h-11 shrink-0 items-center justify-between gap-3 px-4 sm:px-5'>
@@ -262,11 +285,7 @@ export function BatchPage() {
                       key={chapter.path}
                       className={cn(
                         'group relative flex min-w-0 flex-col rounded-lg p-2',
-                        !running &&
-                          !busy &&
-                          !chapter.error &&
-                          !done &&
-                          'cursor-pointer hover:bg-muted/50',
+                        !busy && !chapter.error && !done && 'cursor-pointer hover:bg-muted/50',
                         selected.includes(chapter.path) &&
                           !done &&
                           'bg-primary/[0.035] ring-1 ring-primary/15 ring-inset',
@@ -308,15 +327,21 @@ export function BatchPage() {
                           <input
                             type='checkbox'
                             checked={selected.includes(chapter.path)}
-                            disabled={!!busy || running || !!chapter.error || done}
+                            disabled={
+                              !!busy ||
+                              stopping ||
+                              (running && queue.includes(chapter.path)) ||
+                              !!chapter.error ||
+                              done
+                            }
                             aria-label={chapter.name}
                             className='peer sr-only'
                             onChange={(event) =>
-                              select(
+                              void select(
                                 event.currentTarget.checked
                                   ? [...selected, chapter.path]
                                   : selected.filter((path) => path !== chapter.path),
-                              )
+                              ).catch(() => undefined)
                             }
                           />
                           {done ? (
@@ -339,14 +364,14 @@ export function BatchPage() {
                       </span>
                       <span
                         className={cn(
-                          'line-clamp-2 text-[11px] leading-4 font-medium break-words',
+                          'text-[11px] leading-4 font-medium break-words',
                           cardLayout === 'overlay'
                             ? 'pointer-events-none absolute inset-x-2 bottom-2 rounded-b bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1.5 pt-5 pb-1.5 text-white'
                             : 'mt-1.5 h-8',
                         )}
                         title={chapter.name}
                       >
-                        {chapter.name.replace(/\.cbz$/i, '')}
+                        <span className='line-clamp-2'>{chapter.name.replace(/\.cbz$/i, '')}</span>
                       </span>
                       <span
                         className='absolute top-3 right-3 rounded bg-black/70 px-1 py-0.5 text-[10px] leading-3 text-white tabular-nums'

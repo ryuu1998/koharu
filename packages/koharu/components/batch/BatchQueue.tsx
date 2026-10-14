@@ -1,10 +1,18 @@
 'use client'
 
-import { Check, FileArchive, PanelRightClose, PanelRightOpen, TriangleAlert } from 'lucide-react'
+import {
+  Check,
+  FileArchive,
+  GripVertical,
+  PanelRightClose,
+  PanelRightOpen,
+  TriangleAlert,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { useBatchStore } from '@/lib/batch'
+import { BatchStageProgress } from '@/components/batch/BatchStageProgress'
+import { reorderBatch, useBatchStore } from '@/lib/batch'
 import { Button } from '@koharu/ui/components/button'
 import { Progress } from '@koharu/ui/components/progress'
 import { cn } from '@koharu/ui/lib/utils'
@@ -18,16 +26,20 @@ export function BatchQueue() {
   const statuses = useBatchStore((s) => s.statuses)
   const running = useBatchStore((s) => s.running)
   const stopping = useBatchStore((s) => s.stopping)
+  const pauseState = useBatchStore((s) => s.pauseState)
   const activePath = useBatchStore((s) => s.activePath)
   const progress = useBatchStore((s) => s.progress)
   const [collapsed, setCollapsed] = useState(false)
   const [following, setFollowing] = useState(true)
+  const [dragged, setDragged] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ path: string; after: boolean } | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const chapters = useMemo(() => new Map(source?.chapters.map((c) => [c.path, c])), [source])
   const paths = queue.length ? queue : selected
-  const next = paths.findIndex(
-    (path) => ['running', 'exporting'].includes(statuses[path]) || !statuses[path],
+  const activeIndex = paths.findIndex(
+    (path) => path === activePath && ['running', 'exporting'].includes(statuses[path]),
   )
+  const next = activeIndex >= 0 ? activeIndex : paths.findIndex((path) => !statuses[path])
   const focusIndex = next < 0 ? paths.length : next
   const processed = paths.filter((path) =>
     ['translated', 'skipped', 'failed', 'stopped'].includes(statuses[path]),
@@ -125,22 +137,79 @@ export function BatchQueue() {
             const failed = statuses[path] === 'failed'
             const caption = done
               ? 'batch.translated'
-              : stopping && active
-                ? 'batch.stopping'
-                : statuses[path]
-                  ? `batch.${statuses[path]}`
-                  : focused && !running
-                    ? 'batch.upNext'
-                    : 'batch.waiting'
+              : active && pauseState !== 'playing' && !stopping
+                ? 'batch.' + pauseState
+                : stopping && active
+                  ? 'batch.stopping'
+                  : statuses[path]
+                    ? `batch.${statuses[path]}`
+                    : focused && !running
+                      ? 'batch.upNext'
+                      : 'batch.waiting'
+            const movable = !stopping && !statuses[path] && (!running || index > focusIndex)
+            const target = dropTarget?.path === path
             const top = 8 + index * 48 + (index > focusIndex ? 88 : 0)
             return (
               <li
                 key={path}
                 aria-label={chapter.name}
                 aria-current={active ? 'step' : undefined}
-                className='batch-queue-item absolute inset-x-0'
+                draggable={movable}
+                onDragStart={(event) => {
+                  if (!movable) {
+                    event.preventDefault()
+                    return
+                  }
+                  event.dataTransfer.setData('text/plain', path)
+                  event.dataTransfer.effectAllowed = 'move'
+                  setDragged(path)
+                  setFollowing(false)
+                }}
+                onDragEnd={() => {
+                  setDragged(null)
+                  setDropTarget(null)
+                }}
+                onDragOver={(event) => {
+                  if (!movable || !dragged || dragged === path) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  setDropTarget({ path, after: event.clientY > rect.top + rect.height / 2 })
+                  const panel = viewport.current
+                  if (panel) {
+                    const bounds = panel.getBoundingClientRect()
+                    if (event.clientY < bounds.top + 32) panel.scrollBy({ top: -16 })
+                    else if (event.clientY > bounds.bottom - 32) panel.scrollBy({ top: 16 })
+                  }
+                }}
+                onDrop={(event) => {
+                  if (!movable || !dragged || !dropTarget || dropTarget.path !== path) return
+                  event.preventDefault()
+                  const before = dropTarget.after
+                    ? (paths
+                        .slice(index + 1)
+                        .find((entry) => entry !== dragged && !statuses[entry]) ?? null)
+                    : path
+                  void reorderBatch(dragged, before).catch(() => undefined)
+                  setDragged(null)
+                  setDropTarget(null)
+                }}
+                className={cn(
+                  'batch-queue-item absolute inset-x-0',
+                  movable && 'group cursor-grab active:cursor-grabbing',
+                  dragged === path && 'opacity-40',
+                )}
                 style={{ transform: `translateY(${top}px)` }}
               >
+                {target && (
+                  <span
+                    aria-hidden='true'
+                    className={cn(
+                      'absolute inset-x-0 h-0.5 rounded bg-primary',
+                      dropTarget.after ? '-bottom-1' : '-top-1',
+                    )}
+                  />
+                )}
                 <div className='flex items-start gap-3'>
                   <span
                     className={cn(
@@ -190,6 +259,12 @@ export function BatchQueue() {
                       {t(caption)}
                     </p>
                   </div>
+                  {movable && (
+                    <GripVertical
+                      className='mt-1 size-3 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100'
+                      aria-label={t('batch.dragToReorder')}
+                    />
+                  )}
                 </div>
                 {active && (
                   <div className='absolute inset-x-0 top-[90px]'>
@@ -209,6 +284,7 @@ export function BatchQueue() {
           })}
         </ol>
       </div>
+      {!collapsed && <BatchStageProgress path={paths[focusIndex]} />}
     </aside>
   )
 }

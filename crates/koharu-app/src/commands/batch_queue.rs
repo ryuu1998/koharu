@@ -147,8 +147,9 @@ fn path_key(path: &Path) -> PathBuf {
 }
 
 fn absolute_target(path: &Path) -> Result<PathBuf> {
+    let path = std::path::absolute(path)?;
     if path.exists() {
-        return Ok(std::fs::canonicalize(path)?);
+        return Ok(std::fs::canonicalize(&path)?);
     }
     let parent = path.parent().context("output folder needs a parent")?;
     let name = path.file_name().context("invalid output folder")?;

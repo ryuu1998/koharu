@@ -141,6 +141,7 @@ pub(super) fn is_cbz(path: &Path) -> bool {
 }
 
 fn scan(path: PathBuf) -> Result<BatchSource> {
+    let path = fs::canonicalize(path)?;
     let paths = discover(&path)?;
     let default_output = path.join("Translated");
     let exported = exported_chapters(&paths, &default_output);

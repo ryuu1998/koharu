@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BatchPage } from '@/components/batch/BatchPage'
-import { sortBatchChapters, useBatchStore } from '@/lib/batch'
+import { addBatchSource, sortBatchChapters, useBatchStore } from '@/lib/batch'
 import { useKoharuStore } from '@/lib/store'
 import { commands, type BatchSource } from '@koharu/bridge/protocol'
 import type { BatchEvent, BatchReport } from '@koharu/bridge/protocol'
@@ -45,6 +45,7 @@ beforeEach(() => {
   useBatchStore.setState({
     source: null,
     output: null,
+    destinations: {},
     selected: [],
     queue: [],
     runId: null,
@@ -254,6 +255,78 @@ describe('batch chapter browser', () => {
     expect(useBatchStore.getState().source).toEqual(source)
   })
 
+  it('appends selected chapters and new folders during a run, and drags only waiting entries', async () => {
+    useBatchStore.getState().setSource(sortableSource)
+    await useBatchStore.getState().select([source.chapters[0].path, 'chapter2.cbz'])
+    let events: { onmessage: (event: BatchEvent) => void } | undefined
+    let finish: ((report: BatchReport) => void) | undefined
+    vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
+      events = channel
+      channel.onmessage({
+        event: 'chapter_started',
+        path: source.chapters[0].path,
+        name: 'chapter1.cbz',
+        pages: 32,
+      })
+      return new Promise<BatchReport>((resolve) => {
+        finish = resolve
+      })
+    })
+    const append = vi.spyOn(commands, 'appendBatch').mockImplementation(async (_id, entries) => {
+      events?.onmessage({
+        event: 'queue_changed',
+        paths: [...useBatchStore.getState().queue, ...entries.map((entry) => entry.path)],
+      })
+      return null
+    })
+    const reorder = vi.spyOn(commands, 'reorderBatch').mockResolvedValue(null)
+    vi.spyOn(commands, 'getBatchExports').mockResolvedValue([])
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Translate 2 chapters' }))
+    await waitFor(() => expect(useBatchStore.getState().running).toBe(true))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'chapter10.cbz' }))
+    await waitFor(() => expect(append).toHaveBeenCalledOnce())
+    const queue = within(screen.getByRole('complementary', { name: 'Queue' }))
+    const active = queue.getByRole('listitem', { name: 'chapter1.cbz' })
+    const second = queue.getByRole('listitem', { name: 'chapter2.cbz' })
+    const third = queue.getByRole('listitem', { name: 'chapter10.cbz' })
+    expect(active).toHaveAttribute('draggable', 'false')
+    expect(third).toHaveAttribute('draggable', 'true')
+    const dataTransfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
+    fireEvent.dragStart(third, { dataTransfer })
+    fireEvent.dragOver(second, { dataTransfer, clientY: -10 })
+    fireEvent.drop(second, { dataTransfer, clientY: -10 })
+    await waitFor(() =>
+      expect(reorder).toHaveBeenCalledWith(
+        useBatchStore.getState().runId,
+        'chapter10.cbz',
+        'chapter2.cbz',
+      ),
+    )
+    const imported = {
+      ...source,
+      path: 'D:\\More',
+      default_output: 'D:\\More\\Translated',
+      chapters: [{ ...source.chapters[0], path: 'D:\\More\\chapter20.cbz', name: 'chapter20.cbz' }],
+    }
+    await act(async () => {
+      await addBatchSource(imported, imported.default_output, useBatchStore.getState().runId)
+    })
+    expect(useBatchStore.getState().activePath).toBe(source.chapters[0].path)
+    expect(useBatchStore.getState().output).toBe(source.default_output)
+    expect(useBatchStore.getState().destinations[imported.chapters[0].path]).toBe(
+      imported.default_output,
+    )
+    expect(useBatchStore.getState().queue.at(-1)).toBe(imported.chapters[0].path)
+    await act(async () => {
+      await addBatchSource(imported, imported.default_output, useBatchStore.getState().runId)
+    })
+    expect(append).toHaveBeenCalledTimes(2)
+    await act(async () => {
+      finish?.({ completed: 0, skipped: 0, failures: [], stopped: true })
+    })
+  })
+
   it('starts only selected healthy chapters and keeps stop active until completion', async () => {
     useBatchStore.getState().setSource(source)
     useBatchStore.getState().select([source.chapters[0].path])
@@ -305,6 +378,10 @@ describe('batch chapter browser', () => {
     await waitFor(() => expect(pause).toHaveBeenCalledOnce())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled())
     expect(useBatchStore.getState().stages.detection).toBe(8)
+    expect(screen.getByRole('progressbar', { name: 'Detection' })).toHaveAttribute(
+      'aria-valuenow',
+      '25',
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     await waitFor(() => expect(resume).toHaveBeenCalledOnce())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled())

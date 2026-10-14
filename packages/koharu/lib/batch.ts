@@ -41,6 +41,7 @@ export function sortBatchChapters(
 interface BatchStore {
   source: BatchSource | null
   output: string | null
+  destinations: Record<string, string>
   selected: string[]
   queue: string[]
   runId: string | null
@@ -61,7 +62,7 @@ interface BatchStore {
   report: BatchReport | null
   setSource: (source: BatchSource) => void
   setOutput: (output: string) => Promise<void>
-  select: (paths: string[]) => void
+  select: (paths: string[]) => Promise<void>
   setCardSize: (size: number) => void
   toggleCardLayout: () => void
   setSort: (sortBy: BatchSort) => void
@@ -72,6 +73,7 @@ export const useBatchStore = create<BatchStore>()(
     (set, get) => ({
       source: null,
       output: null,
+      destinations: {},
       selected: [],
       queue: [],
       runId: null,
@@ -94,6 +96,9 @@ export const useBatchStore = create<BatchStore>()(
         set({
           source,
           output: source.default_output,
+          destinations: Object.fromEntries(
+            source.chapters.map((chapter) => [chapter.path, source.default_output]),
+          ),
           selected: [],
           exported: source.exported,
           report: null,
@@ -115,6 +120,9 @@ export const useBatchStore = create<BatchStore>()(
         if (get().source !== source) return
         set({
           output,
+          destinations: Object.fromEntries(
+            source.chapters.map((chapter) => [chapter.path, output]),
+          ),
           exported,
           statuses: {},
           report: null,
@@ -126,8 +134,25 @@ export const useBatchStore = create<BatchStore>()(
           selected: [],
         })
       },
-      select: (selected) => {
-        if (get().running) return
+      select: async (selected) => {
+        const current = get()
+        if (current.running) {
+          const paths = [...new Set(selected)].filter(
+            (path) =>
+              !current.queue.includes(path) &&
+              current.source?.chapters.some((chapter) => chapter.path === path && !chapter.error) &&
+              !current.exported.includes(path),
+          )
+          if (!paths.length || current.stopping || !current.runId) return
+          await call(
+            commands.appendBatch,
+            current.runId,
+            paths.map((path) => ({ path, output: current.destinations[path] ?? current.output! })),
+          )
+          if (get().runId === current.runId)
+            set((state) => ({ selected: [...new Set([...state.selected, ...paths])] }))
+          return
+        }
         set({
           selected: [...new Set(selected)],
           queue: [],
@@ -227,7 +252,10 @@ export async function startBatch(): Promise<void> {
       commands.processBatch,
       {
         id,
-        chapters: chapters.map((path) => ({ path, output: state.output! })),
+        chapters: chapters.map((path) => ({
+          path,
+          output: state.destinations[path] ?? state.output!,
+        })),
         jpeg_quality: 95,
         overwrite: false,
       },
@@ -285,4 +313,69 @@ export async function resumeBatch(): Promise<void> {
   if (!runId || !running || pauseState !== 'paused') return
   await call(commands.resumeBatch, runId)
   if (useBatchStore.getState().runId === runId) useBatchStore.setState({ pauseState: 'playing' })
+}
+
+export async function addBatchSource(
+  source: BatchSource,
+  output: string,
+  expectedRun: string | null,
+): Promise<void> {
+  const state = useBatchStore.getState()
+  if (state.running && state.runId !== expectedRun)
+    throw new Error('The batch changed. Import the folder again.')
+  const fresh = source.chapters.filter(
+    (chapter) => !state.source?.chapters.some((existing) => existing.path === chapter.path),
+  )
+  const exported = await call(
+    commands.getBatchExports,
+    fresh.map((chapter) => chapter.path),
+    output,
+  )
+  const paths = fresh
+    .filter((chapter) => !chapter.error && !exported.includes(chapter.path))
+    .map((chapter) => chapter.path)
+  const current = useBatchStore.getState()
+  if (current.running && (current.runId !== expectedRun || current.stopping))
+    throw new Error('The batch changed. Import the folder again.')
+  if (current.running && current.runId && paths.length) {
+    await call(
+      commands.appendBatch,
+      current.runId,
+      paths.map((path) => ({ path, output })),
+    )
+  }
+  useBatchStore.setState((state) => ({
+    source: state.source
+      ? { ...state.source, chapters: [...state.source.chapters, ...fresh] }
+      : source,
+    destinations: {
+      ...state.destinations,
+      ...Object.fromEntries(fresh.map((chapter) => [chapter.path, output])),
+    },
+    exported: [...new Set([...state.exported, ...exported])],
+    selected: [...new Set([...state.selected, ...paths])],
+    queue: state.running ? state.queue : [],
+    report: state.running ? state.report : null,
+  }))
+}
+
+export async function reorderBatch(path: string, before: string | null): Promise<void> {
+  const state = useBatchStore.getState()
+  if (state.running) {
+    if (
+      state.stopping ||
+      !state.runId ||
+      state.statuses[path] ||
+      (before && state.statuses[before])
+    )
+      return
+    await call(commands.reorderBatch, state.runId, path, before)
+    return
+  }
+  const order = state.selected.filter((entry) => entry !== path)
+  if (!state.selected.includes(path)) return
+  const index = before ? order.indexOf(before) : order.length
+  if (index < 0) return
+  order.splice(index, 0, path)
+  useBatchStore.setState({ selected: order, queue: [] })
 }
