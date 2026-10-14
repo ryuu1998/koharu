@@ -41,7 +41,9 @@ const source: BatchSource = {
 }
 
 beforeEach(() => {
+  window.PointerEvent = MouseEvent as typeof PointerEvent
   HTMLElement.prototype.scrollTo = vi.fn()
+  HTMLElement.prototype.scrollBy = vi.fn()
   useBatchStore.setState({
     source: null,
     output: null,
@@ -90,6 +92,29 @@ const sortableSource: BatchSource = {
 }
 
 describe('batch chapter browser', () => {
+  it('reorders selection before starting even after a stopped run and submits that order', async () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    useBatchStore.setState({ selected: paths, statuses: { [paths[0]]: 'stopped' } })
+    const run = vi
+      .spyOn(commands, 'processBatch')
+      .mockResolvedValue({ completed: 3, skipped: 0, failures: [], stopped: false })
+    render(<BatchPage />)
+    const queue = within(screen.getByRole('complementary', { name: 'Queue' }))
+    const last = queue.getByRole('listitem', { name: 'chapter10.cbz' })
+    fireEvent.pointerDown(last, { button: 0, clientY: 250 })
+    fireEvent.pointerMove(last, { clientY: 10 })
+    fireEvent.pointerUp(last, { clientY: 10 })
+    expect(useBatchStore.getState().selected).toEqual([paths[2], paths[0], paths[1]])
+    fireEvent.click(screen.getByRole('button', { name: 'Translate 3 chapters' }))
+    await waitFor(() => expect(run).toHaveBeenCalledOnce())
+    expect(run.mock.calls[0][0].chapters.map((chapter) => chapter.path)).toEqual([
+      paths[2],
+      paths[0],
+      paths[1],
+    ])
+  })
+
   it('switches compact layouts without hiding chapter names or page counts', () => {
     useBatchStore.getState().setSource(source)
     render(<BatchPage />)
@@ -295,14 +320,12 @@ describe('batch chapter browser', () => {
     await waitFor(() => expect(append).toHaveBeenCalledOnce())
     const queue = within(screen.getByRole('complementary', { name: 'Queue' }))
     const active = queue.getByRole('listitem', { name: 'chapter1.cbz' })
-    const second = queue.getByRole('listitem', { name: 'chapter2.cbz' })
     const third = queue.getByRole('listitem', { name: 'chapter10.cbz' })
-    expect(active).toHaveAttribute('draggable', 'false')
-    expect(third).toHaveAttribute('draggable', 'true')
-    const dataTransfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
-    fireEvent.dragStart(third, { dataTransfer })
-    fireEvent.dragOver(second, { dataTransfer, clientY: -10 })
-    fireEvent.drop(second, { dataTransfer, clientY: -10 })
+    expect(active).toHaveAttribute('data-movable', 'false')
+    expect(third).toHaveAttribute('data-movable', 'true')
+    fireEvent.pointerDown(third, { button: 0, clientY: 240 })
+    fireEvent.pointerMove(third, { clientY: 140 })
+    fireEvent.pointerUp(third, { clientY: 140 })
     await waitFor(() =>
       expect(reorder).toHaveBeenCalledWith(
         useBatchStore.getState().runId,
@@ -310,6 +333,11 @@ describe('batch chapter browser', () => {
         'chapter2.cbz',
       ),
     )
+    expect(useBatchStore.getState().queue).toEqual([
+      source.chapters[0].path,
+      'chapter10.cbz',
+      'chapter2.cbz',
+    ])
     const imported = {
       ...source,
       path: 'D:\\More',

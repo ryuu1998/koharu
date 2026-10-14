@@ -131,7 +131,7 @@
   }
 
   @media (prefers-reduced-motion: no-preference) {
-    .batch-queue-item {
+    .batch-queue-item:not([data-dragging='true']) {
       transition: transform 650ms cubic-bezier(0.22, 0.8, 0.22, 1) !important;
     }
 

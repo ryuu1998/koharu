@@ -156,6 +156,7 @@ export const useBatchStore = create<BatchStore>()(
         set({
           selected: [...new Set(selected)],
           queue: [],
+          statuses: {},
           report: null,
           activePath: null,
           progress: null,

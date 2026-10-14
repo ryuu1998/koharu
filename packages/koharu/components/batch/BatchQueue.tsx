@@ -32,15 +32,25 @@ export function BatchQueue() {
   const [collapsed, setCollapsed] = useState(false)
   const [following, setFollowing] = useState(true)
   const [dragged, setDragged] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<{ path: string; after: boolean } | null>(null)
+  const [dragY, setDragY] = useState(0)
+  const [dropBefore, setDropBefore] = useState<string | null>(null)
+  const drag = useRef<{
+    path: string
+    start: number
+    top: number
+    before: string | null
+    moved: boolean
+  } | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const chapters = useMemo(() => new Map(source?.chapters.map((c) => [c.path, c])), [source])
-  const paths = queue.length ? queue : selected
+  const paths = running || !selected.length ? queue : selected
   const activeIndex = paths.findIndex(
     (path) => path === activePath && ['running', 'exporting'].includes(statuses[path]),
   )
   const next = activeIndex >= 0 ? activeIndex : paths.findIndex((path) => !statuses[path])
   const focusIndex = next < 0 ? paths.length : next
+  const movable = (path: string, index: number) =>
+    !stopping && (!running || (!statuses[path] && index > focusIndex))
   const processed = paths.filter((path) =>
     ['translated', 'skipped', 'failed', 'stopped'].includes(statuses[path]),
   ).length
@@ -146,68 +156,79 @@ export function BatchQueue() {
                     : focused && !running
                       ? 'batch.upNext'
                       : 'batch.waiting'
-            const movable = !stopping && !statuses[path] && (!running || index > focusIndex)
-            const target = dropTarget?.path === path
+            const canMove = movable(path, index)
+            const target = dragged && dropBefore === path
             const top = 8 + index * 48 + (index > focusIndex ? 88 : 0)
             return (
               <li
                 key={path}
                 aria-label={chapter.name}
                 aria-current={active ? 'step' : undefined}
-                draggable={movable}
-                onDragStart={(event) => {
-                  if (!movable) {
-                    event.preventDefault()
+                data-queue-path={path}
+                data-movable={canMove}
+                data-dragging={dragged === path}
+                draggable={false}
+                onPointerDown={(event) => {
+                  if (
+                    !canMove ||
+                    event.button !== 0 ||
+                    (event.target as HTMLElement).closest('button')
+                  )
                     return
-                  }
-                  event.dataTransfer.setData('text/plain', path)
-                  event.dataTransfer.effectAllowed = 'move'
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  drag.current = { path, start: event.clientY, top, before: path, moved: false }
+                }}
+                onPointerMove={(event) => {
+                  const current = drag.current
+                  if (!current || current.path !== path || !canMove) return
+                  if (!current.moved && Math.abs(event.clientY - current.start) < 4) return
+                  current.moved = true
                   setDragged(path)
                   setFollowing(false)
-                }}
-                onDragEnd={() => {
-                  setDragged(null)
-                  setDropTarget(null)
-                }}
-                onDragOver={(event) => {
-                  if (!movable || !dragged || dragged === path) return
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = 'move'
-                  const rect = event.currentTarget.getBoundingClientRect()
-                  setDropTarget({ path, after: event.clientY > rect.top + rect.height / 2 })
                   const panel = viewport.current
                   if (panel) {
                     const bounds = panel.getBoundingClientRect()
                     if (event.clientY < bounds.top + 32) panel.scrollBy({ top: -16 })
                     else if (event.clientY > bounds.bottom - 32) panel.scrollBy({ top: 16 })
+                    const before =
+                      paths.find((entry, slot) => {
+                        if (entry === path || !movable(entry, slot)) return false
+                        const slotTop = 8 + slot * 48 + (slot > focusIndex ? 88 : 0)
+                        const midpoint = slotTop + (slot === focusIndex ? 68 : 24)
+                        return event.clientY - bounds.top + panel.scrollTop < midpoint
+                      }) ?? null
+                    current.before = before
+                    setDropBefore(before)
                   }
+                  setDragY(current.top + event.clientY - current.start)
                 }}
-                onDrop={(event) => {
-                  if (!movable || !dragged || !dropTarget || dropTarget.path !== path) return
-                  event.preventDefault()
-                  const before = dropTarget.after
-                    ? (paths
-                        .slice(index + 1)
-                        .find((entry) => entry !== dragged && !statuses[entry]) ?? null)
-                    : path
-                  void reorderBatch(dragged, before).catch(() => undefined)
+                onPointerUp={(event) => {
+                  const current = drag.current
+                  drag.current = null
                   setDragged(null)
-                  setDropTarget(null)
+                  if (event.currentTarget.hasPointerCapture(event.pointerId))
+                    event.currentTarget.releasePointerCapture(event.pointerId)
+                  if (current?.moved && canMove)
+                    void reorderBatch(current.path, current.before).catch(() => undefined)
+                }}
+                onPointerCancel={() => {
+                  drag.current = null
+                  setDragged(null)
                 }}
                 className={cn(
                   'batch-queue-item absolute inset-x-0',
-                  movable && 'group cursor-grab active:cursor-grabbing',
-                  dragged === path && 'opacity-40',
+                  canMove && 'group cursor-grab touch-none select-none active:cursor-grabbing',
+                  dragged === path && 'z-10 rounded bg-[var(--surface-panel)] shadow-md',
                 )}
-                style={{ transform: `translateY(${top}px)` }}
+                style={{
+                  transform: `translateY(${dragged === path ? dragY : top}px)`,
+                  transition: dragged === path ? 'none' : undefined,
+                }}
               >
                 {target && (
                   <span
                     aria-hidden='true'
-                    className={cn(
-                      'absolute inset-x-0 h-0.5 rounded bg-primary',
-                      dropTarget.after ? '-bottom-1' : '-top-1',
-                    )}
+                    className='absolute inset-x-0 -top-1 h-0.5 rounded bg-primary'
                   />
                 )}
                 <div className='flex items-start gap-3'>
@@ -222,6 +243,7 @@ export function BatchQueue() {
                       <img
                         src={chapter.thumbnail}
                         alt=''
+                        draggable={false}
                         className='absolute inset-0 size-full object-contain'
                       />
                     ) : (
@@ -259,7 +281,7 @@ export function BatchQueue() {
                       {t(caption)}
                     </p>
                   </div>
-                  {movable && (
+                  {canMove && (
                     <GripVertical
                       className='mt-1 size-3 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100'
                       aria-label={t('batch.dragToReorder')}
@@ -282,6 +304,12 @@ export function BatchQueue() {
               </li>
             )
           })}
+          {dragged && dropBefore === null && (
+            <span
+              aria-hidden='true'
+              className='absolute inset-x-0 bottom-0 h-0.5 rounded bg-primary'
+            />
+          )}
         </ol>
       </div>
       {!collapsed && <BatchStageProgress path={paths[focusIndex]} />}
