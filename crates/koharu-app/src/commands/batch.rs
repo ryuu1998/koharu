@@ -62,6 +62,9 @@ pub enum BatchEvent {
     QueueChanged {
         paths: Vec<PathBuf>,
     },
+    ChapterQueued {
+        path: PathBuf,
+    },
     ChapterStarted {
         path: PathBuf,
         name: String,
@@ -212,6 +215,26 @@ pub(crate) async fn reorder_batch(
 
 #[tauri::command]
 #[specta::specta]
+pub(crate) async fn retry_batch(
+    id: String,
+    path: PathBuf,
+    batch: State<'_, BatchState>,
+) -> std::result::Result<(), Error> {
+    let run = current(&batch, &id)?;
+    if run.stop.stopped() {
+        return Err(anyhow::anyhow!("the batch is stopping").into());
+    }
+    let mut queue = run.queue.lock();
+    queue.retry(&path)?;
+    (run.events)(BatchEvent::ChapterQueued { path });
+    (run.events)(BatchEvent::QueueChanged {
+        paths: queue.paths(),
+    });
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn pause_batch(
     id: String,
     batch: State<'_, BatchState>,
@@ -296,7 +319,7 @@ pub(super) async fn run_chapters(
                 path: chapter,
                 output,
             });
-            run.queue.lock().finish();
+            run.queue.lock().finish(false);
             continue;
         }
         let result = async {
@@ -316,6 +339,7 @@ pub(super) async fn run_chapters(
         .await;
         match result {
             Ok(()) => {
+                run.queue.lock().finish(false);
                 report.completed += 1;
                 events(BatchEvent::ChapterFinished {
                     path: chapter,
@@ -328,6 +352,8 @@ pub(super) async fn run_chapters(
             }
             Err(error) => {
                 let message = format!("{error:#}");
+                run.queue.lock().finish(true);
+                tracing::error!(batch_id = %run.id, chapter = %chapter.display(), error = %message, "batch chapter failed");
                 events(BatchEvent::ChapterFailed {
                     path: chapter.clone(),
                     name: chapter
@@ -337,14 +363,19 @@ pub(super) async fn run_chapters(
                         .into_owned(),
                     error: message.clone(),
                 });
+                report.failures.retain(|failure| failure.chapter != chapter);
                 report.failures.push(BatchFailure {
                     chapter,
                     error: message,
                 });
             }
         }
-        run.queue.lock().finish();
     }
+    report
+        .failures
+        .retain(|failure| run.queue.lock().failed(&failure.chapter));
+    tracing::info!(batch_id = %run.id, completed = report.completed, skipped = report.skipped,
+        failed = report.failures.len(), stopped = report.stopped, "batch finished");
     events(BatchEvent::Finished {
         report: report.clone(),
     });
@@ -498,14 +529,9 @@ async fn process_chapter(
         })),
     )
     .await?;
-    eprintln!(
-        "Batch {}: import {:.2}s, pipeline {:.2}s, export {:.2}s, total {:.2}s",
-        chapter.file_name().unwrap_or_default().to_string_lossy(),
-        import_elapsed.as_secs_f64(),
-        processing_elapsed.as_secs_f64(),
-        export_started.elapsed().as_secs_f64(),
-        started.elapsed().as_secs_f64()
-    );
+    tracing::info!(chapter = %chapter.display(), import_secs = import_elapsed.as_secs_f64(),
+        pipeline_secs = processing_elapsed.as_secs_f64(), export_secs = export_started.elapsed().as_secs_f64(),
+        total_secs = started.elapsed().as_secs_f64(), "batch chapter completed");
     Ok(())
 }
 

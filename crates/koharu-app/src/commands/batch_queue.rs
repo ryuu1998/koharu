@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
 };
 
@@ -13,6 +13,7 @@ pub struct BatchEntry {
     pub output: PathBuf,
 }
 
+#[derive(Clone)]
 pub(super) struct WorkItem {
     pub path: PathBuf,
     pub output: PathBuf,
@@ -22,7 +23,8 @@ pub(super) struct WorkItem {
 pub(super) struct Queue {
     pending: VecDeque<WorkItem>,
     history: Vec<PathBuf>,
-    active: Option<PathBuf>,
+    active: Option<WorkItem>,
+    failed: BTreeMap<PathBuf, WorkItem>,
     sources: BTreeSet<PathBuf>,
     outputs: BTreeSet<PathBuf>,
     accepting: bool,
@@ -34,6 +36,7 @@ impl Default for Queue {
             pending: VecDeque::new(),
             history: Vec::new(),
             active: None,
+            failed: BTreeMap::new(),
             sources: BTreeSet::new(),
             outputs: BTreeSet::new(),
             accepting: true,
@@ -88,17 +91,39 @@ impl Queue {
 
     pub(super) fn claim(&mut self) -> Option<WorkItem> {
         let entry = self.pending.pop_front();
-        self.active = entry.as_ref().map(|entry| entry.path.clone());
+        self.active = entry.clone();
         if entry.is_none() {
             self.accepting = false;
         }
         entry
     }
 
-    pub(super) fn finish(&mut self) {
-        if let Some(path) = self.active.take() {
-            self.history.push(path);
+    pub(super) fn finish(&mut self, failed: bool) {
+        if let Some(entry) = self.active.take() {
+            self.history.push(entry.path.clone());
+            if failed {
+                self.failed.insert(entry.path.clone(), entry);
+            }
         }
+    }
+
+    pub(super) fn retry(&mut self, path: &Path) -> Result<()> {
+        ensure!(
+            self.accepting,
+            "this batch has finished; start another batch"
+        );
+        let entry = self
+            .failed
+            .remove(path)
+            .context("only failed chapters can be retried")?;
+        self.history.retain(|entry| entry != path);
+        // Preserve the original destination reservation and canonical source identity.
+        self.pending.push_back(entry);
+        Ok(())
+    }
+
+    pub(super) fn failed(&self, path: &Path) -> bool {
+        self.failed.contains_key(path)
     }
 
     pub(super) fn reorder(&mut self, path: &Path, before: Option<&Path>) -> Result<()> {
@@ -128,7 +153,7 @@ impl Queue {
     pub(super) fn paths(&self) -> Vec<PathBuf> {
         self.history
             .iter()
-            .chain(self.active.iter())
+            .chain(self.active.iter().map(|entry| &entry.path))
             .cloned()
             .chain(self.pending.iter().map(|entry| entry.path.clone()))
             .collect()
@@ -161,6 +186,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn retries_failed_work_at_the_end_without_changing_active_or_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let entries: Vec<_> = ["a.cbz", "b.cbz", "c.cbz"]
+            .into_iter()
+            .map(|name| {
+                let path = dir.path().join(name);
+                std::fs::write(&path, b"archive").unwrap();
+                BatchEntry {
+                    path,
+                    output: dir.path().join("out"),
+                }
+            })
+            .collect();
+        let mut queue = Queue::default();
+        queue.append(entries.clone()).unwrap();
+        let failed = queue.claim().unwrap();
+        assert!(queue.retry(&failed.path).is_err());
+        queue.finish(true);
+        let active = queue.claim().unwrap();
+        queue.retry(&failed.path).unwrap();
+        assert_eq!(
+            queue.paths(),
+            [
+                active.path.clone(),
+                entries[2].path.clone(),
+                failed.path.clone()
+            ]
+        );
+        assert!(!queue.failed(&failed.path));
+        assert!(queue.retry(&failed.path).is_err());
+        queue.append(vec![entries[0].clone()]).unwrap();
+        assert_eq!(queue.paths().len(), 3);
+        queue.finish(false);
+        assert_eq!(queue.claim().unwrap().path, entries[2].path);
+        queue.finish(false);
+        let retry = queue.claim().unwrap();
+        assert_eq!(retry.path, failed.path);
+        assert_eq!(retry.output, failed.output);
+        queue.finish(true);
+        assert!(queue.claim().is_none());
+        assert!(queue.retry(&retry.path).is_err());
+    }
+
+    #[test]
     fn keeps_active_fixed_and_reorders_only_pending_work() {
         let dir = tempfile::tempdir().unwrap();
         let mut queue = Queue::default();
@@ -182,11 +251,11 @@ mod tests {
             .reorder(&entries[2].path, Some(&entries[1].path))
             .unwrap();
         queue.append(vec![entries[1].clone()]).unwrap();
-        queue.finish();
+        queue.finish(false);
         assert_eq!(queue.claim().unwrap().path, entries[2].path);
-        queue.finish();
+        queue.finish(false);
         assert_eq!(queue.claim().unwrap().path, entries[1].path);
-        queue.finish();
+        queue.finish(false);
         assert!(queue.claim().is_none());
         assert!(queue.append(entries).is_err());
     }

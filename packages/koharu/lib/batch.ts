@@ -60,6 +60,7 @@ interface BatchStore {
   completedChapters: number
   totalChapters: number
   statuses: Record<string, ChapterStatus>
+  errors: Record<string, string>
   report: BatchReport | null
   setSource: (source: BatchSource) => void
   setOutput: (output: string) => Promise<void>
@@ -93,6 +94,7 @@ export const useBatchStore = create<BatchStore>()(
       completedChapters: 0,
       totalChapters: 0,
       statuses: {},
+      errors: {},
       report: null,
       setSource: (source) =>
         set({
@@ -111,6 +113,7 @@ export const useBatchStore = create<BatchStore>()(
           completedChapters: 0,
           totalChapters: 0,
           statuses: {},
+          errors: {},
         }),
       setOutput: async (output) => {
         const source = get().source
@@ -128,6 +131,7 @@ export const useBatchStore = create<BatchStore>()(
           ),
           exported,
           statuses: {},
+          errors: {},
           report: null,
           activePath: null,
           progress: null,
@@ -208,6 +212,7 @@ export async function startBatch(): Promise<void> {
     queue: chapters,
     runId: id,
     statuses: {},
+    errors: {},
     completedChapters: 0,
     totalChapters: chapters.length,
   })
@@ -219,6 +224,14 @@ export async function startBatch(): Promise<void> {
           queue: event.paths,
           selected: event.paths,
           totalChapters: event.paths.length,
+        })
+      } else if (event.event === 'chapter_queued') {
+        useBatchStore.setState((state) => {
+          const statuses = { ...state.statuses }
+          const errors = { ...state.errors }
+          delete statuses[event.path]
+          delete errors[event.path]
+          return { statuses, errors, completedChapters: Math.max(0, state.completedChapters - 1) }
         })
       } else if (event.event === 'started')
         useBatchStore.setState({ totalChapters: event.total_chapters })
@@ -257,6 +270,10 @@ export async function startBatch(): Promise<void> {
           useBatchStore.setState((state) => ({
             completedChapters: state.completedChapters + 1,
             statuses: { ...state.statuses, [path]: status },
+            errors:
+              event.event === 'chapter_failed'
+                ? { ...state.errors, [path]: event.error }
+                : state.errors,
             exported:
               status === 'translated' ? [...new Set([...state.exported, path])] : state.exported,
           }))
@@ -394,4 +411,25 @@ export async function reorderBatch(path: string, before: string | null): Promise
   if (index < 0) return
   order.splice(index, 0, path)
   useBatchStore.setState({ selected: order, queue: [] })
+}
+
+export async function retryBatch(path: string): Promise<void> {
+  const state = useBatchStore.getState()
+  if (state.stopping || state.statuses[path] !== 'failed') return
+  if (state.running) {
+    if (state.runId) await call(commands.retryBatch, state.runId, path)
+    return
+  }
+  const statuses = { ...state.statuses }
+  const errors = { ...state.errors }
+  delete statuses[path]
+  delete errors[path]
+  useBatchStore.setState({
+    selected: [...state.selected.filter((entry) => entry !== path), path],
+    queue: [],
+    statuses,
+    errors,
+    report: null,
+    completedChapters: Math.max(0, state.completedChapters - 1),
+  })
 }

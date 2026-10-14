@@ -65,6 +65,7 @@ beforeEach(() => {
     progress: null,
     activePath: null,
     statuses: {},
+    errors: {},
     completedChapters: 0,
     totalChapters: 0,
   })
@@ -93,6 +94,78 @@ const sortableSource: BatchSource = {
 }
 
 describe('batch chapter browser', () => {
+  it('shows the failure cause and retries at the end while the active chapter stays fixed', async () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    await useBatchStore.getState().select(paths)
+    let events: { onmessage: (event: BatchEvent) => void } | undefined
+    let finish: ((report: BatchReport) => void) | undefined
+    vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
+      events = channel
+      channel.onmessage({ event: 'queue_changed', paths })
+      channel.onmessage({
+        event: 'chapter_failed',
+        path: paths[0],
+        name: 'chapter1.cbz',
+        error: 'Cloud request limit exhausted',
+      })
+      channel.onmessage({
+        event: 'chapter_started',
+        path: paths[1],
+        name: 'chapter2.cbz',
+        pages: 12,
+      })
+      return new Promise<BatchReport>((resolve) => {
+        finish = resolve
+      })
+    })
+    const retry = vi.spyOn(commands, 'retryBatch').mockImplementation(async (_id, path) => {
+      events?.onmessage({ event: 'chapter_queued', path })
+      events?.onmessage({ event: 'queue_changed', paths: [paths[1], paths[2], path] })
+      return null
+    })
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Translate 3 chapters' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Retry chapter1.cbz' })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show error for chapter1.cbz' }))
+    expect(screen.getByRole('dialog', { name: 'Chapter failed' })).toHaveTextContent(
+      'Cloud request limit exhausted',
+    )
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry chapter1.cbz' }))
+    await waitFor(() =>
+      expect(retry).toHaveBeenCalledWith(useBatchStore.getState().runId, paths[0]),
+    )
+    expect(useBatchStore.getState().queue).toEqual([paths[1], paths[2], paths[0]])
+    expect(useBatchStore.getState().activePath).toBe(paths[1])
+    expect(useBatchStore.getState().statuses[paths[0]]).toBeUndefined()
+    expect(useBatchStore.getState().errors[paths[0]]).toBeUndefined()
+    expect(useBatchStore.getState().completedChapters).toBe(0)
+    await act(async () => {
+      finish?.({ completed: 0, skipped: 0, failures: [], stopped: true })
+    })
+  })
+
+  it('puts an idle retry at the end of the selection without starting other failed chapters', async () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    useBatchStore.setState({
+      selected: [paths[0], paths[2]],
+      queue: paths,
+      statuses: { [paths[0]]: 'failed', [paths[2]]: 'failed' },
+      errors: { [paths[0]]: 'Detection failed', [paths[2]]: 'Request failed' },
+    })
+    const run = vi.spyOn(commands, 'processBatch')
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry chapter1.cbz' }))
+    await waitFor(() => expect(useBatchStore.getState().selected).toEqual([paths[2], paths[0]]))
+    expect(useBatchStore.getState().statuses[paths[2]]).toBe('failed')
+    expect(screen.getByRole('button', { name: 'Translate 2 chapters' })).toBeEnabled()
+    expect(run).not.toHaveBeenCalled()
+  })
+
   it('reorders selection before starting even after a stopped run and submits that order', async () => {
     useBatchStore.getState().setSource(sortableSource)
     const paths = sortableSource.chapters.map((chapter) => chapter.path)

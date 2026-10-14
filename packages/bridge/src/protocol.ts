@@ -33,6 +33,7 @@ export const commands = {
 	resumeBatch: (id: string) => __TAURI_INVOKE<null>("resume_batch", { id }),
 	appendBatch: (id: string, chapters: BatchEntry[]) => __TAURI_INVOKE<null>("append_batch", { id, chapters }),
 	reorderBatch: (id: string, path: string, before: string | null) => __TAURI_INVOKE<null>("reorder_batch", { id, path, before }),
+	retryBatch: (id: string, path: string) => __TAURI_INVOKE<null>("retry_batch", { id, path }),
 	getProject: () => __TAURI_INVOKE<{
 	name: string,
 	revision: Revision,
@@ -129,7 +130,7 @@ export type BatchEntry = {
 	output: string,
 };
 
-export type BatchEvent = { event: "started"; total_chapters: number } | { event: "queue_changed"; paths: string[] } | { event: "chapter_started"; path: string; name: string; pages: number } | { event: "chapter_progress"; path: string; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; path: string } | { event: "chapter_rendered"; path: string; completed_pages: number; total_pages: number } | { event: "chapter_finished"; path: string; output: string } | { event: "chapter_skipped"; path: string; output: string } | { event: "chapter_failed"; path: string; name: string; error: string } | { event: "finished"; report: BatchReport };
+export type BatchEvent = { event: "started"; total_chapters: number } | { event: "queue_changed"; paths: string[] } | { event: "chapter_queued"; path: string } | { event: "chapter_started"; path: string; name: string; pages: number } | { event: "chapter_progress"; path: string; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; path: string } | { event: "chapter_rendered"; path: string; completed_pages: number; total_pages: number } | { event: "chapter_finished"; path: string; output: string } | { event: "chapter_skipped"; path: string; output: string } | { event: "chapter_failed"; path: string; name: string; error: string } | { event: "finished"; report: BatchReport };
 
 export type BatchFailure = {
 	chapter: string,

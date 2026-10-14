@@ -12,8 +12,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BatchStageProgress } from '@/components/batch/BatchStageProgress'
-import { reorderBatch, useBatchStore } from '@/lib/batch'
+import { reorderBatch, retryBatch, useBatchStore } from '@/lib/batch'
 import { Button } from '@koharu/ui/components/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@koharu/ui/components/dialog'
 import { Progress } from '@koharu/ui/components/progress'
 import { cn } from '@koharu/ui/lib/utils'
 
@@ -24,6 +25,7 @@ export function BatchQueue() {
   const queue = useBatchStore((s) => s.queue)
   const exported = useBatchStore((s) => s.exported)
   const statuses = useBatchStore((s) => s.statuses)
+  const errors = useBatchStore((s) => s.errors)
   const running = useBatchStore((s) => s.running)
   const stopping = useBatchStore((s) => s.stopping)
   const pauseState = useBatchStore((s) => s.pauseState)
@@ -35,6 +37,8 @@ export function BatchQueue() {
   const [dragged, setDragged] = useState<string | null>(null)
   const [dragY, setDragY] = useState(0)
   const [dropBefore, setDropBefore] = useState<string | null>(null)
+  const [errorPath, setErrorPath] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState<string | null>(null)
   const drag = useRef<{
     path: string
     start: number
@@ -51,7 +55,7 @@ export function BatchQueue() {
     (path) => path === activePath && ['running', 'exporting'].includes(statuses[path]),
   )
   const next = activeIndex >= 0 ? activeIndex : paths.findIndex((path) => !statuses[path])
-  const focusIndex = next < 0 ? paths.length : next
+  const focusIndex = !running && selected.length ? 0 : next < 0 ? paths.length : next
   const movable = (path: string, index: number) =>
     !stopping && (!running || (!statuses[path] && index > focusIndex))
   const processed = paths.filter((path) =>
@@ -135,7 +139,7 @@ export function BatchQueue() {
           )}
         </Button>
       </div>
-      {!collapsed && !following && (
+      {!collapsed && !following && !dragged && running && (
         <Button
           variant='ghost'
           size='xs'
@@ -151,7 +155,9 @@ export function BatchQueue() {
         hidden={collapsed}
         className='min-h-0 flex-1 overflow-y-auto px-4 pb-4'
         onWheel={() => setFollowing(false)}
-        onPointerDown={() => setFollowing(false)}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) setFollowing(false)
+        }}
         onTouchMove={() => setFollowing(false)}
         onKeyDown={(event) => {
           if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key))
@@ -245,6 +251,10 @@ export function BatchQueue() {
                   drag.current = null
                   setDragged(null)
                 }}
+                onLostPointerCapture={() => {
+                  drag.current = null
+                  setDragged(null)
+                }}
                 className={cn(
                   'batch-queue-item absolute inset-x-0',
                   canMove && 'group cursor-grab touch-none select-none active:cursor-grabbing',
@@ -308,9 +318,36 @@ export function BatchQueue() {
                     >
                       {done && <Check className='size-3 shrink-0' aria-hidden='true' />}
                       {failed && <TriangleAlert className='size-3 shrink-0' aria-hidden='true' />}
-                      {t(caption)}
+                      {failed && errors[path] ? (
+                        <button
+                          className='underline decoration-destructive/40 underline-offset-2'
+                          onClick={() => setErrorPath(path)}
+                          aria-label={t('batch.showError', { chapter: chapter.name })}
+                        >
+                          {t(caption)}
+                        </button>
+                      ) : (
+                        t(caption)
+                      )}
                     </p>
                   </div>
+                  {failed && (
+                    <Button
+                      variant='ghost'
+                      size='xs'
+                      className='h-6 px-1.5 text-[10px]'
+                      disabled={stopping || retrying !== null}
+                      aria-label={t('batch.retryChapter', { chapter: chapter.name })}
+                      onClick={() => {
+                        setRetrying(path)
+                        void retryBatch(path)
+                          .catch(() => undefined)
+                          .finally(() => setRetrying(null))
+                      }}
+                    >
+                      {t('batch.retry')}
+                    </Button>
+                  )}
                   {canMove && (
                     <GripVertical
                       className='mt-1 size-3 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100'
@@ -343,6 +380,22 @@ export function BatchQueue() {
         </ol>
       </div>
       {!collapsed && <BatchStageProgress path={paths[focusIndex]} />}
+      <Dialog
+        open={errorPath !== null}
+        onOpenChange={(open) => {
+          if (!open) setErrorPath(null)
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>{t('batch.chapterFailed')}</DialogTitle>
+          <DialogDescription className='break-words'>
+            {errorPath ? chapters.get(errorPath)?.name : ''}
+          </DialogDescription>
+          <p className='max-h-64 overflow-y-auto text-xs leading-relaxed break-words whitespace-pre-wrap'>
+            {errorPath ? errors[errorPath] : ''}
+          </p>
+        </DialogContent>
+      </Dialog>
     </aside>
   )
 }
