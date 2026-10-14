@@ -2,6 +2,7 @@
 
 import { Channel } from '@tauri-apps/api/core'
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 import { call } from '@/lib/backend'
 import {
@@ -42,6 +43,7 @@ interface BatchStore {
   selected: string[]
   queue: string[]
   cardSize: number
+  cardLayout: 'overlay' | 'caption'
   sortBy: BatchSort
   sortDescending: boolean
   exported: string[]
@@ -57,83 +59,101 @@ interface BatchStore {
   setOutput: (output: string) => Promise<void>
   select: (paths: string[]) => void
   setCardSize: (size: number) => void
+  toggleCardLayout: () => void
   setSort: (sortBy: BatchSort) => void
 }
 
-export const useBatchStore = create<BatchStore>()((set, get) => ({
-  source: null,
-  output: null,
-  selected: [],
-  queue: [],
-  cardSize: 96,
-  sortBy: 'added',
-  sortDescending: true,
-  exported: [],
-  running: false,
-  stopping: false,
-  activePath: null,
-  progress: null,
-  completedChapters: 0,
-  totalChapters: 0,
-  statuses: {},
-  report: null,
-  setSource: (source) =>
-    set({
-      source,
-      output: source.default_output,
-      selected: source.chapters
-        .filter((chapter) => !chapter.error && !source.exported.includes(chapter.path))
-        .map((chapter) => chapter.path),
-      exported: source.exported,
-      report: null,
-      progress: null,
-      activePath: null,
+export const useBatchStore = create<BatchStore>()(
+  persist(
+    (set, get) => ({
+      source: null,
+      output: null,
+      selected: [],
       queue: [],
+      cardSize: 96,
+      cardLayout: 'overlay',
+      sortBy: 'added',
+      sortDescending: true,
+      exported: [],
+      running: false,
+      stopping: false,
+      activePath: null,
+      progress: null,
       completedChapters: 0,
       totalChapters: 0,
       statuses: {},
+      report: null,
+      setSource: (source) =>
+        set({
+          source,
+          output: source.default_output,
+          selected: source.chapters
+            .filter((chapter) => !chapter.error && !source.exported.includes(chapter.path))
+            .map((chapter) => chapter.path),
+          exported: source.exported,
+          report: null,
+          progress: null,
+          activePath: null,
+          queue: [],
+          completedChapters: 0,
+          totalChapters: 0,
+          statuses: {},
+        }),
+      setOutput: async (output) => {
+        const source = get().source
+        if (!source) return
+        const exported = await call(
+          commands.getBatchExports,
+          source.chapters.map((chapter) => chapter.path),
+          output,
+        )
+        if (get().source !== source) return
+        set({
+          output,
+          exported,
+          statuses: {},
+          report: null,
+          activePath: null,
+          progress: null,
+          queue: [],
+          completedChapters: 0,
+          totalChapters: 0,
+          selected: source.chapters
+            .filter((chapter) => !chapter.error && !exported.includes(chapter.path))
+            .map((chapter) => chapter.path),
+        })
+      },
+      select: (selected) => {
+        if (get().running) return
+        set({
+          selected: [...new Set(selected)],
+          queue: [],
+          report: null,
+          activePath: null,
+          progress: null,
+        })
+      },
+      setCardSize: (size) =>
+        set({ cardSize: Math.min(160, Math.max(64, Math.round(size / 8) * 8)) }),
+      toggleCardLayout: () =>
+        set((state) => ({ cardLayout: state.cardLayout === 'overlay' ? 'caption' : 'overlay' })),
+      setSort: (sortBy) =>
+        set((state) => ({
+          sortBy,
+          sortDescending: state.sortBy === sortBy ? !state.sortDescending : true,
+        })),
     }),
-  setOutput: async (output) => {
-    const source = get().source
-    if (!source) return
-    const exported = await call(
-      commands.getBatchExports,
-      source.chapters.map((chapter) => chapter.path),
-      output,
-    )
-    if (get().source !== source) return
-    set({
-      output,
-      exported,
-      statuses: {},
-      report: null,
-      activePath: null,
-      progress: null,
-      queue: [],
-      completedChapters: 0,
-      totalChapters: 0,
-      selected: source.chapters
-        .filter((chapter) => !chapter.error && !exported.includes(chapter.path))
-        .map((chapter) => chapter.path),
-    })
-  },
-  select: (selected) => {
-    if (get().running) return
-    set({
-      selected: [...new Set(selected)],
-      queue: [],
-      report: null,
-      activePath: null,
-      progress: null,
-    })
-  },
-  setCardSize: (size) => set({ cardSize: Math.min(160, Math.max(64, Math.round(size / 8) * 8)) }),
-  setSort: (sortBy) =>
-    set((state) => ({
-      sortBy,
-      sortDescending: state.sortBy === sortBy ? !state.sortDescending : true,
-    })),
-}))
+    {
+      name: 'koharu-batch-view',
+      partialize: ({ cardSize, cardLayout, sortBy, sortDescending }) => ({
+        cardSize,
+        cardLayout,
+        sortBy,
+        sortDescending,
+      }),
+    },
+  ),
+)
 
 export async function startBatch(): Promise<void> {
   const state = useBatchStore.getState()

@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, GalleryVerticalEnd, PanelBottom } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { type BatchSort, useBatchStore } from '@/lib/batch'
@@ -16,6 +16,8 @@ import { Slider } from '@koharu/ui/components/slider'
 export function BatchViewControls({ busy }: { busy: boolean }) {
   const { t } = useTranslation()
   const cardSize = useBatchStore((s) => s.cardSize)
+  const cardLayout = useBatchStore((s) => s.cardLayout)
+  const toggleCardLayout = useBatchStore((s) => s.toggleCardLayout)
   const sortBy = useBatchStore((s) => s.sortBy)
   const descending = useBatchStore((s) => s.sortDescending)
   const setCardSize = useBatchStore((s) => s.setCardSize)
@@ -32,6 +34,19 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
 
   return (
     <>
+      <Button
+        variant='ghost'
+        size='icon-sm'
+        onClick={toggleCardLayout}
+        aria-label={t(cardLayout === 'overlay' ? 'batch.layout.caption' : 'batch.layout.overlay')}
+        title={t(cardLayout === 'overlay' ? 'batch.layout.caption' : 'batch.layout.overlay')}
+      >
+        {cardLayout === 'overlay' ? (
+          <PanelBottom className='size-4' strokeWidth={1.75} />
+        ) : (
+          <GalleryVerticalEnd className='size-4' strokeWidth={1.75} />
+        )}
+      </Button>
       <div
         className='flex shrink-0 items-center gap-2'
         role='group'

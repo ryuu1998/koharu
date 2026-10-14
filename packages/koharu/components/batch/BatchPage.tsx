@@ -4,12 +4,12 @@ import {
   ArrowLeft,
   Check,
   Download,
-  File,
   FileArchive,
   FolderOpen,
   LoaderCircle,
   Settings,
   Upload,
+  TriangleAlert,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -24,7 +24,7 @@ import { Button } from '@koharu/ui/components/button'
 import { cn } from '@koharu/ui/lib/utils'
 
 export function BatchPage() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const source = useBatchStore((s) => s.source)
   const output = useBatchStore((s) => s.output)
   const selected = useBatchStore((s) => s.selected)
@@ -35,6 +35,7 @@ export function BatchPage() {
   const running = useBatchStore((s) => s.running)
   const stopping = useBatchStore((s) => s.stopping)
   const cardSize = useBatchStore((s) => s.cardSize)
+  const cardLayout = useBatchStore((s) => s.cardLayout)
   const sortBy = useBatchStore((s) => s.sortBy)
   const sortDescending = useBatchStore((s) => s.sortDescending)
   const statuses = useBatchStore((s) => s.statuses)
@@ -237,6 +238,12 @@ export function BatchPage() {
                         active && 'bg-primary/[0.06] ring-primary/35',
                         done && 'bg-green-600/[0.055] ring-1 ring-green-600/25 ring-inset',
                       )}
+                      title={[
+                        chapter.name,
+                        t(caption),
+                        t('batch.pages', { count: chapter.pages }),
+                        `${(chapter.size / 1048576).toFixed(1)} MB`,
+                      ].join(' · ')}
                       style={{ width: cardSize + 16 }}
                     >
                       <span
@@ -259,7 +266,7 @@ export function BatchPage() {
                         )}
                         <span
                           className={cn(
-                            'absolute top-1 right-1 grid size-5 place-items-center rounded',
+                            'absolute top-1 left-1 grid size-5 place-items-center rounded',
                             !chapter.error && 'bg-background/95',
                           )}
                         >
@@ -295,48 +302,34 @@ export function BatchPage() {
                           )}
                         </span>
                       </span>
-                      <span className='mt-1 truncate text-[10px] text-muted-foreground tabular-nums'>
-                        {sortBy === 'size'
-                          ? `${(chapter.size / 1048576).toLocaleString(i18n.resolvedLanguage, { maximumFractionDigits: 1 })} MB`
-                          : sortBy === 'added'
-                            ? chapter.created_at === null
-                              ? t('batch.unknownDate')
-                              : new Date(chapter.created_at).toLocaleDateString(
-                                  i18n.resolvedLanguage,
-                                )
-                            : t('batch.pages', { count: chapter.pages })}
-                      </span>
                       <span
-                        className='mt-2 line-clamp-2 h-8 text-[11px] leading-4 font-medium break-words'
+                        className={cn(
+                          'line-clamp-2 text-[11px] leading-4 font-medium break-words',
+                          cardLayout === 'overlay'
+                            ? 'pointer-events-none absolute inset-x-2 bottom-2 rounded-b bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1.5 pt-5 pb-1.5 text-white'
+                            : 'mt-1.5 h-8',
+                        )}
                         title={chapter.name}
                       >
                         {chapter.name.replace(/\.cbz$/i, '')}
                       </span>
-                      <span className='mt-1 flex min-w-0 items-center justify-between gap-1 text-[10px] leading-[14px]'>
-                        <span
-                          className={cn(
-                            'min-w-0 truncate',
-                            done
-                              ? 'text-green-700 dark:text-green-300'
-                              : failed
-                                ? 'text-destructive'
-                                : active
-                                  ? 'text-primary'
-                                  : 'text-muted-foreground',
-                          )}
-                          title={chapter.error ?? t(caption)}
-                        >
+                      <span
+                        className='absolute top-3 right-3 rounded bg-black/70 px-1 py-0.5 text-[10px] leading-3 text-white tabular-nums'
+                        aria-label={t('batch.pages', { count: chapter.pages })}
+                      >
+                        {chapter.pages}P
+                      </span>
+                      {(done || failed) && (
+                        <span className='sr-only' title={chapter.error ?? t(caption)}>
                           {t(done ? 'batch.translated' : caption)}
                         </span>
-                        <span
-                          className='flex shrink-0 items-center gap-0.5 text-muted-foreground tabular-nums'
-                          title={t('batch.pages', { count: chapter.pages })}
-                          aria-label={t('batch.pages', { count: chapter.pages })}
-                        >
-                          <File className='size-2.5' strokeWidth={1.5} aria-hidden='true' />
-                          {chapter.pages}
-                        </span>
-                      </span>
+                      )}
+                      {failed && (
+                        <TriangleAlert
+                          className='absolute top-3 left-3 size-4 text-destructive'
+                          aria-hidden='true'
+                        />
+                      )}
                     </label>
                   )
                 })}

@@ -48,6 +48,7 @@ beforeEach(() => {
     selected: [],
     queue: [],
     cardSize: 96,
+    cardLayout: 'overlay',
     sortBy: 'added',
     sortDescending: true,
     exported: [],
@@ -85,6 +86,18 @@ const sortableSource: BatchSource = {
 }
 
 describe('batch chapter browser', () => {
+  it('switches compact layouts without hiding chapter names or page counts', () => {
+    useBatchStore.getState().setSource(source)
+    render(<BatchPage />)
+    const name = screen.getByRole('checkbox', { name: 'chapter1.cbz' })
+    expect(screen.getByLabelText('32 pages')).toHaveTextContent('32P')
+    fireEvent.click(screen.getByRole('button', { name: 'Show titles below covers' }))
+    expect(useBatchStore.getState().cardLayout).toBe('caption')
+    expect(name).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show titles on covers' }))
+    expect(useBatchStore.getState().cardLayout).toBe('overlay')
+  })
+
   it('keeps unknown dates last in both directions and uses natural names for tied values', () => {
     const names = (sort: 'added' | 'pages', descending: boolean) =>
       sortBatchChapters(sortableSource.chapters, sort, descending).map((c) => c.name)

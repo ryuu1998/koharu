@@ -605,6 +605,10 @@
         "ascending": "Fewest pages first",
         "descending": "Most pages first"
       }
+    },
+    "layout": {
+      "caption": "Show titles below covers",
+      "overlay": "Show titles on covers"
     }
   }
 }
