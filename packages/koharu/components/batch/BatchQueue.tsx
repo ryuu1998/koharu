@@ -90,11 +90,11 @@ export function BatchQueue() {
   useEffect(() => {
     if (following && !collapsed && viewport.current) {
       viewport.current.scrollTo({
-        top: focusIndex * 48,
+        top: Math.min(focusIndex, Math.max(0, paths.length - 1)) * 48,
         behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       })
     }
-  }, [focusIndex, following, collapsed, viewportHeight])
+  }, [focusIndex, following, collapsed, viewportHeight, paths.length])
 
   if (!paths.length) return null
 
@@ -168,10 +168,10 @@ export function BatchQueue() {
           className='relative'
           aria-label={t('batch.queueChapters')}
           style={{
-            height: Math.max(
-              paths.length * 48 + (focusIndex < paths.length ? 88 : 0) + 8,
-              focusIndex * 48 + viewportHeight - 16,
-            ),
+            height:
+              focusIndex < paths.length
+                ? Math.max(paths.length * 48 + 96, focusIndex * 48 + viewportHeight - 16)
+                : paths.length * 48 + 8,
           }}
         >
           {paths.map((path, index) => {

@@ -94,6 +94,21 @@ const sortableSource: BatchSource = {
 }
 
 describe('batch chapter browser', () => {
+  it('keeps completed history in view after the final chapter finishes', () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    useBatchStore.setState({
+      queue: paths,
+      selected: [],
+      statuses: Object.fromEntries(paths.map((path) => [path, 'translated'])),
+      exported: paths,
+    })
+    render(<BatchPage />)
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith({ top: 96, behavior: 'smooth' })
+    const queue = within(screen.getByRole('complementary', { name: 'Queue' }))
+    expect(queue.getAllByText('Translated')).toHaveLength(3)
+  })
+
   it('shows the failure cause and retries at the end while the active chapter stays fixed', async () => {
     useBatchStore.getState().setSource(sortableSource)
     const paths = sortableSource.chapters.map((chapter) => chapter.path)
