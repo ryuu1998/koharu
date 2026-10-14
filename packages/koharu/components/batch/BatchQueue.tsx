@@ -29,6 +29,7 @@ export function BatchQueue() {
   const pauseState = useBatchStore((s) => s.pauseState)
   const activePath = useBatchStore((s) => s.activePath)
   const progress = useBatchStore((s) => s.progress)
+  const rendering = useBatchStore((s) => s.rendering)
   const [collapsed, setCollapsed] = useState(false)
   const [following, setFollowing] = useState(true)
   const [dragged, setDragged] = useState<string | null>(null)
@@ -42,8 +43,10 @@ export function BatchQueue() {
     moved: boolean
   } | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
+  const [viewportHeight, setViewportHeight] = useState(0)
   const chapters = useMemo(() => new Map(source?.chapters.map((c) => [c.path, c])), [source])
   const paths = running || !selected.length ? queue : selected
+  const hasPaths = paths.length > 0
   const activeIndex = paths.findIndex(
     (path) => path === activePath && ['running', 'exporting'].includes(statuses[path]),
   )
@@ -55,17 +58,39 @@ export function BatchQueue() {
     ['translated', 'skipped', 'failed', 'stopped'].includes(statuses[path]),
   ).length
   const percent = progress?.total_steps
-    ? Math.max(0, Math.min(99, Math.floor((progress.completed_steps / progress.total_steps) * 100)))
+    ? Math.max(
+        0,
+        Math.min(
+          99,
+          Math.floor(
+            ((progress.completed_steps + (rendering?.completed_pages ?? 0)) /
+              (progress.total_steps + progress.total_pages)) *
+              100,
+          ),
+        ),
+      )
     : 0
+
+  useEffect(() => {
+    setFollowing(true)
+  }, [activePath])
+
+  useEffect(() => {
+    const panel = viewport.current
+    if (!panel) return
+    const observer = new ResizeObserver(() => setViewportHeight(panel.clientHeight))
+    observer.observe(panel)
+    return () => observer.disconnect()
+  }, [hasPaths])
 
   useEffect(() => {
     if (following && !collapsed && viewport.current) {
       viewport.current.scrollTo({
-        top: Math.max(0, (focusIndex - 1) * 48),
+        top: focusIndex * 48,
         behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       })
     }
-  }, [focusIndex, following, collapsed])
+  }, [focusIndex, following, collapsed, viewportHeight])
 
   if (!paths.length) return null
 
@@ -76,7 +101,7 @@ export function BatchQueue() {
         'flex min-h-0 shrink-0 flex-col border-t border-border/70 bg-[var(--surface-panel)] min-[800px]:border-s min-[800px]:border-t-0',
         collapsed
           ? 'h-10 min-[800px]:h-auto min-[800px]:w-9'
-          : 'h-72 min-[800px]:h-auto min-[800px]:w-[280px]',
+          : 'h-[420px] max-h-[70vh] min-[800px]:h-auto min-[800px]:max-h-none min-[800px]:w-[280px]',
       )}
     >
       <div
@@ -136,7 +161,12 @@ export function BatchQueue() {
         <ol
           className='relative'
           aria-label={t('batch.queueChapters')}
-          style={{ height: paths.length * 48 + (focusIndex < paths.length ? 88 : 0) + 8 }}
+          style={{
+            height: Math.max(
+              paths.length * 48 + (focusIndex < paths.length ? 88 : 0) + 8,
+              focusIndex * 48 + viewportHeight - 16,
+            ),
+          }}
         >
           {paths.map((path, index) => {
             const chapter = chapters.get(path)

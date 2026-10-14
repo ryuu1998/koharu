@@ -60,6 +60,7 @@ beforeEach(() => {
     stopping: false,
     pauseState: 'playing',
     stages: {},
+    rendering: null,
     report: null,
     progress: null,
     activePath: null,
@@ -197,7 +198,7 @@ describe('batch chapter browser', () => {
     })
     expect(screen.getByRole('progressbar', { name: 'Chapter progress' })).toHaveAttribute(
       'aria-valuenow',
-      '99',
+      '80',
     )
     expect(useBatchStore.getState().exported).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Collapse queue' }))
@@ -401,6 +402,12 @@ describe('batch chapter browser', () => {
         total_steps: 128,
         stage: 'detection',
       })
+      channel.onmessage({
+        event: 'chapter_rendered',
+        path: source.chapters[0].path,
+        completed_pages: 3,
+        total_pages: 32,
+      })
       return new Promise<BatchReport>((resolve) => {
         finish = resolve
       })
@@ -419,6 +426,10 @@ describe('batch chapter browser', () => {
     })
     expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeDisabled()
     expect(screen.getByRole('progressbar', { name: 'Chapter progress' })).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Rendering' })).toHaveAttribute(
+      'aria-valuenow',
+      '9.375',
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Collapse queue' }))
     expect(screen.getByRole('button', { name: 'Expand queue' })).toHaveAttribute(
       'aria-expanded',

@@ -83,6 +83,13 @@ pub enum BatchEvent {
     ChapterExporting {
         path: PathBuf,
     },
+    ChapterRendered {
+        path: PathBuf,
+        #[specta(type = f64)]
+        completed_pages: usize,
+        #[specta(type = f64)]
+        total_pages: usize,
+    },
     ChapterFinished {
         path: PathBuf,
         output: PathBuf,
@@ -473,6 +480,7 @@ async fn process_chapter(
     let path = chapter.to_owned();
     let metadata = tokio_rayon::spawn(move || batch_source::comic_info(&path)).await?;
     let snapshot = session.lock().await.snapshot();
+    let render_path = chapter.to_owned();
     cbz::export(
         snapshot,
         desktop.renderer(),
@@ -481,6 +489,13 @@ async fn process_chapter(
         quality,
         metadata,
         overwrite,
+        Some(Arc::new(move |completed_pages| {
+            events(BatchEvent::ChapterRendered {
+                path: render_path.clone(),
+                completed_pages,
+                total_pages: count,
+            });
+        })),
     )
     .await?;
     eprintln!(

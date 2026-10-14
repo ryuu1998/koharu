@@ -141,6 +141,7 @@ pub(crate) async fn export(
             cbz::DEFAULT_QUALITY,
             None,
             true,
+            None,
         )
         .await?;
         return Ok(());

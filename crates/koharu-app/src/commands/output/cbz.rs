@@ -16,6 +16,7 @@ use super::{page_stem, rasterize};
 
 pub(crate) const DEFAULT_QUALITY: u8 = 95;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn export(
     snapshot: Snapshot,
     renderer: Renderer,
@@ -24,6 +25,7 @@ pub(crate) async fn export(
     quality: u8,
     comic_info: Option<Vec<u8>>,
     overwrite: bool,
+    on_page: Option<Arc<dyn Fn(usize) + Send + Sync>>,
 ) -> Result<()> {
     ensure!(
         (1..=100).contains(&quality),
@@ -69,11 +71,16 @@ pub(crate) async fn export(
         .buffered(4);
     futures::pin_mut!(images);
     let prepared = async {
+        let mut completed = 0;
         while let Some(image) = images.try_next().await? {
             sender
                 .send(image)
                 .await
                 .map_err(|_| anyhow::anyhow!("archive writer stopped unexpectedly"))?;
+            completed += 1;
+            if let Some(on_page) = &on_page {
+                on_page(completed);
+            }
         }
         Ok::<_, anyhow::Error>(())
     }

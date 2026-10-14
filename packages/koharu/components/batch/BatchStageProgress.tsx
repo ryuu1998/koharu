@@ -10,6 +10,7 @@ export function BatchStageProgress({ path }: { path: string | undefined }) {
   const activePath = useBatchStore((s) => s.activePath)
   const running = useBatchStore((s) => s.running)
   const stages = useBatchStore((s) => s.stages)
+  const rendering = useBatchStore((s) => s.rendering)
   const progress = useBatchStore((s) => s.progress)
   const source = useBatchStore((s) => s.source)
   if (!running || !path) return null
@@ -21,12 +22,17 @@ export function BatchStageProgress({ path }: { path: string | undefined }) {
 
   return (
     <div
-      className='grid shrink-0 grid-cols-2 gap-x-4 gap-y-3 border-t border-border/70 px-4 py-3 min-[500px]:grid-cols-4 min-[800px]:grid-cols-2'
+      className='flex shrink-0 flex-col gap-3 border-t border-border/70 px-4 py-3'
       aria-label={t('batch.stageProgress')}
     >
-      {(['detection', 'ocr', 'translation', 'inpainting'] as const).map((stage) => {
-        const count = current ? Math.min(total, stages[stage] ?? 0) : 0
-        const name = t(`phase.${stage}`)
+      {(['detection', 'ocr', 'translation', 'rendering'] as const).map((stage) => {
+        const count = current
+          ? Math.min(
+              total,
+              stage === 'rendering' ? (rendering?.completed_pages ?? 0) : (stages[stage] ?? 0),
+            )
+          : 0
+        const name = t(stage === 'rendering' ? 'batch.rendering' : `phase.${stage}`)
         return (
           <div key={stage} className='min-w-0'>
             <div className='mb-1.5 flex items-center justify-between gap-1 text-[10px]'>
