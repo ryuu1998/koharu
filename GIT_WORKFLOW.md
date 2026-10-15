@@ -183,7 +183,9 @@ cleanup. It contains no Library or Reader implementation.
 The older implementation-layer PRs are historical references, not an acceptance
 sequence. Review the consolidated replacement rather than merging both it and
 the old stack. Preserve the old branches until their replacements are verified.
-Library and Reader are maintained as a separate complete feature above Batch.
+Library and Reader are consolidated on `codex/library-reader`, based on Batch.
+Each feature has one commit and its own PR. The Library branch is the complete
+development version containing both features; its PR shows only Library changes.
 
 When upstream has advanced beyond the protected `v2/main`, prepare a maintenance
 PR containing the upstream commits unchanged. Base Batch on that maintenance

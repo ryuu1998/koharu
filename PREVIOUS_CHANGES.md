@@ -11,6 +11,12 @@ and Reader are excluded from Batch and are maintained separately above it.
 The delivery policy and Git instructions now describe
 one complete feature per PR.
 
+Library and Reader are consolidated on `codex/library-reader`, above Batch. The
+feature includes native local-CBZ sessions, saved library folders and reading
+positions, library browsing, reader navigation, single-page and two-page layouts,
+gapless Webtoon reading, global overlay settings, and zoom controls. Its source
+snapshot is `ae9c387f`; the shared scene Clippy fix is already owned by Batch.
+
 The older PRs below document how the feature was restored. They are historical
 references; do not merge that implementation stack as well as its consolidated
 replacement. Keep the original branches and recovery checkpoints available.

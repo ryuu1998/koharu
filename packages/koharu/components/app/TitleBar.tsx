@@ -294,6 +294,17 @@ export function TitleBar() {
         >
           {t('batch.tab')}
         </Button>
+        <Button
+          type='button'
+          variant='ghost'
+          size='sm'
+          aria-pressed={workspace === 'library'}
+          disabled={workspace === 'settings'}
+          className='relative z-10 h-6 px-2 text-[11px] text-muted-foreground hover:bg-primary/10 aria-pressed:bg-primary/10 aria-pressed:text-foreground'
+          onClick={() => setWorkspace(workspace === 'library' ? 'project' : 'library')}
+        >
+          {t('reader.library')}
+        </Button>
         <div className='min-w-0 flex-1' />
         <div className='pointer-events-none absolute inset-y-0 left-1/2 flex max-w-[40vw] min-w-16 -translate-x-1/2 items-center justify-center px-3 text-[11px] text-muted-foreground select-none'>
           {project ? (

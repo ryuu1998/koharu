@@ -37,7 +37,7 @@ export type InspectorSection = 'copy' | 'type' | 'layers'
 export type ShortcutAction = CanvasTool | 'fit'
 export type Shortcuts = Record<ShortcutAction, string>
 export type PipelineScope = 'page' | 'selected-pages' | 'project'
-export type Workspace = 'project' | 'settings' | 'batch'
+export type Workspace = 'project' | 'settings' | 'batch' | 'library'
 export const pipelineStages: readonly Stage[] = ['detection', 'ocr', 'translation', 'inpainting']
 
 interface KoharuStore {
@@ -62,7 +62,7 @@ interface KoharuStore {
   processingScope: PipelineScope
   processingStages: Stage[]
   workspace: Workspace
-  returnWorkspace: 'project' | 'batch'
+  returnWorkspace: Exclude<Workspace, 'settings'>
   shortcuts: Shortcuts
   selectPages: (pages: EntityId[]) => void
   showInspector: (section: InspectorSection) => void

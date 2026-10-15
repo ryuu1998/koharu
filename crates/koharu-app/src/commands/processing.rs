@@ -82,6 +82,7 @@ pub(crate) async fn process(
     processing: State<'_, Processing>,
     job_channel: State<'_, JobChannel>,
 ) -> std::result::Result<JobId, Error> {
+    let pipeline = crate::app::inference(&handle)?;
     let snapshot = project
         .project
         .lock()
@@ -111,7 +112,6 @@ pub(crate) async fn process(
     processing.jobs.lock().insert(id, job.clone());
     job_channel.channel.publish(job);
 
-    let pipeline = handle.state::<koharu_pipeline::Pipeline>().inner().clone();
     let task_handle = handle.clone();
     let inpainting_mask = processing.inpainting_mask.lock().take();
     drop(tokio::spawn(async move {
