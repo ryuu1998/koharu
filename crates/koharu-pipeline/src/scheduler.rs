@@ -22,12 +22,6 @@ struct PageWork {
 }
 
 impl PageWork {
-    fn started(&self) -> bool {
-        self.stages
-            .iter()
-            .any(|work| work.state != WorkState::Pending)
-    }
-
     fn finished(&self) -> bool {
         self.stages
             .iter()
@@ -50,8 +44,6 @@ pub(crate) struct Scheduler {
     running: BTreeMap<Stage, usize>,
     pages: Vec<PageWork>,
     page_index: BTreeMap<EntityId, usize>,
-    page_window: usize,
-    active_pages: usize,
     head: usize,
     total: usize,
 }
@@ -66,7 +58,6 @@ impl Scheduler {
             .iter()
             .map(|stage| (*stage, capacity(*stage).max(1)))
             .collect::<BTreeMap<_, _>>();
-        let page_window = capacities.values().sum::<usize>().max(1);
         let pages = pages
             .iter()
             .map(|page| PageWork {
@@ -90,8 +81,6 @@ impl Scheduler {
                 .map(|(index, page)| (page.page, index))
                 .collect(),
             pages,
-            page_window,
-            active_pages: 0,
             head: 0,
             total,
         }
@@ -103,10 +92,6 @@ impl Scheduler {
 
     pub(crate) fn start_next(&mut self) -> Option<(EntityId, Stage)> {
         for page_index in self.head..self.pages.len() {
-            let started = self.pages[page_index].started();
-            if !started && self.active_pages >= self.page_window {
-                break;
-            }
             let stage_index =
                 self.pages[page_index]
                     .stages
@@ -122,9 +107,6 @@ impl Scheduler {
             let Some(stage_index) = stage_index else {
                 continue;
             };
-            if !started {
-                self.active_pages += 1;
-            }
             let page = &mut self.pages[page_index];
             let work = &mut page.stages[stage_index];
             work.state = WorkState::Running;
@@ -151,7 +133,6 @@ impl Scheduler {
         }
         let page_finished = !was_finished && page.finished();
         if page_finished {
-            self.active_pages = self.active_pages.saturating_sub(1);
             while self.head < self.pages.len() && self.pages[self.head].finished() {
                 self.head += 1;
             }
@@ -201,8 +182,8 @@ mod tests {
     }
 
     #[test]
-    fn sliding_window_backpressures_fast_upstream_models() {
-        let pages = pages(4);
+    fn detection_continues_while_ocr_and_cleanup_are_busy() {
+        let pages = pages(22);
         let stages = [Stage::Detection, Stage::Ocr, Stage::Inpainting];
         let mut scheduler = Scheduler::new(&pages, &stages, |_| 1);
 
@@ -211,7 +192,7 @@ mod tests {
         assert_eq!(scheduler.start_next(), Some((pages[0], Stage::Ocr)));
         assert_eq!(scheduler.start_next(), Some((pages[0], Stage::Inpainting)));
 
-        for page in &pages[1..3] {
+        for page in &pages[1..] {
             assert_eq!(scheduler.start_next(), Some((*page, Stage::Detection)));
             assert!(!scheduler.complete_stage(*page, Stage::Detection));
         }
@@ -233,8 +214,32 @@ mod tests {
         assert!(scheduler.complete_stage(pages[3], Stage::Translation));
         assert_eq!(scheduler.start_next(), Some((pages[6], Stage::Translation)));
         assert!(scheduler.start_next().is_none());
-        assert_eq!(scheduler.active_pages, 6);
         assert_eq!(scheduler.running[&Stage::Translation], 6);
+    }
+
+    #[test]
+    fn stalled_cloud_requests_do_not_stop_local_stage_queues() {
+        let pages = pages(30);
+        let mut scheduler = Scheduler::new(&pages, &Stage::ALL, |stage| {
+            if stage == Stage::Translation { 6 } else { 1 }
+        });
+        let mut completed = BTreeMap::<Stage, usize>::new();
+        let mut requests = Vec::new();
+        while let Some((page, stage)) = scheduler.start_next() {
+            if stage == Stage::Translation {
+                requests.push(page);
+            } else {
+                scheduler.complete_stage(page, stage);
+                *completed.entry(stage).or_default() += 1;
+            }
+        }
+        for stage in [Stage::Detection, Stage::Ocr, Stage::Inpainting] {
+            assert_eq!(completed[&stage], 30);
+        }
+        assert_eq!(requests, pages[..6]);
+        assert!(scheduler.start_next().is_none());
+        assert!(scheduler.complete_stage(requests[3], Stage::Translation));
+        assert_eq!(scheduler.start_next(), Some((pages[6], Stage::Translation)));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use anyhow::{Context as _, Result, ensure};
 use futures::{StreamExt as _, stream::FuturesUnordered};
@@ -25,7 +25,7 @@ pub(crate) struct Execution<'a> {
     scope: NormalizedScope,
     scheduler: Scheduler,
     scene: Snapshot,
-    images: BTreeMap<EntityId, Arc<ImageCache>>,
+    images: Arc<ImageCache>,
     completed: usize,
     failure: Option<PipelineError>,
     base: koharu_scene::Revision,
@@ -80,7 +80,7 @@ impl<'a> Execution<'a> {
             scope,
             scheduler,
             scene: snapshot,
-            images: BTreeMap::new(),
+            images: Arc::new(ImageCache::default()),
             completed: 0,
             failure: None,
             base,
@@ -150,11 +150,6 @@ impl<'a> Execution<'a> {
             return None;
         }
         let (page, stage) = self.scheduler.start_next()?;
-        let images = self
-            .images
-            .entry(page)
-            .or_insert_with(|| Arc::new(ImageCache::default()))
-            .clone();
         Some(StageJob::new(
             stage,
             StageInput::new(
@@ -162,7 +157,7 @@ impl<'a> Execution<'a> {
                 page,
                 self.scope.entities(),
                 self.scope.region(page),
-                images,
+                self.images.clone(),
                 self.inpainting_mask
                     .as_ref()
                     .filter(|mask| stage == Stage::Inpainting && mask.page == page)
@@ -241,9 +236,7 @@ impl<'a> Execution<'a> {
     }
 
     fn mark_complete(&mut self, page: EntityId, stage: Stage) {
-        if self.scheduler.complete_stage(page, stage) {
-            self.images.remove(&page);
-        }
+        self.scheduler.complete_stage(page, stage);
         self.completed += 1;
     }
 
