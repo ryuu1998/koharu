@@ -122,6 +122,7 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
                 project: Mutex::new(None),
             });
             application.manage(ProjectLibrary::new()?);
+            application.manage(crate::commands::reader::ReaderState::new()?);
             application.manage(Processing::default());
             application.manage(BatchState::default());
             application.manage(CanvasChannel::default());
