@@ -7,6 +7,7 @@ import { TitleBar } from '@/components/app/TitleBar'
 import { BatchPage } from '@/components/batch/BatchPage'
 import { Editor } from '@/components/editor/Editor'
 import { SettingsPage } from '@/components/preferences/SettingsPage'
+import { LibraryPage } from '@/components/reader/LibraryPage'
 import { StartView } from '@/components/start/StartView'
 import { useProject } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
@@ -21,8 +22,10 @@ export function KoharuApp() {
   const projectLoaded = project !== undefined
   const settingsOpen = useKoharuStore((state) => state.workspace === 'settings')
   const batchOpen = useKoharuStore((state) => state.workspace === 'batch')
+  const libraryOpen = useKoharuStore((state) => state.workspace === 'library')
   const activePage = project?.active_page
-  const editorOpen = project !== undefined && project !== null && !settingsOpen && !batchOpen
+  const editorOpen =
+    project !== undefined && project !== null && !settingsOpen && !batchOpen && !libraryOpen
 
   useEffect(() => {
     if (!projectLoaded || selectedPages.length > 0) return
@@ -42,6 +45,8 @@ export function KoharuApp() {
         <SettingsPage />
       ) : batchOpen ? (
         <BatchPage />
+      ) : libraryOpen ? (
+        <LibraryPage />
       ) : project === undefined ? (
         <main className='grid min-h-0 flex-1 place-items-center bg-[var(--surface-canvas)]'>
           <div className='flex items-center gap-3 text-[12px] text-muted-foreground'>

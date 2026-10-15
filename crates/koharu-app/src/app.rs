@@ -8,8 +8,7 @@ use crate::commands::{
     batch::BatchState,
     canvas::CanvasChannel,
     lifecycle::{
-        Download, DownloadChannel, DownloadState, Initialization, ModelResources, ProjectChannel,
-        ResourceChannel,
+        Download, DownloadChannel, DownloadState, ModelResources, ProjectChannel, ResourceChannel,
     },
     processing::{JobChannel, Processing},
     project::{CurrentProject, ProjectLibrary},
@@ -38,20 +37,15 @@ pub(crate) async fn initialize(handle: AppHandle<CefRuntime>) -> Result<()> {
         }
     }));
 
-    let project = handle
-        .state::<CurrentProject>()
-        .project
-        .lock()
-        .await
-        .as_ref()
-        .map(|project| (project.snapshot(), project.active_page()));
-    let desktop = handle.state::<koharu_desktop::Desktop>();
-    if let Some((snapshot, page)) = project {
-        desktop.show_page(&snapshot, page).await?;
-    } else {
-        desktop.clear().await;
-    }
     Ok(())
+}
+
+pub(crate) fn inference(handle: &AppHandle<CefRuntime>) -> Result<koharu_pipeline::Pipeline> {
+    Ok(handle
+        .try_state::<koharu_pipeline::Pipeline>()
+        .context("The translation runtime is not ready. It may still be initializing; check the application log if this persists.")?
+        .inner()
+        .clone())
 }
 
 pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
@@ -116,6 +110,7 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
                 project: Mutex::new(None),
             });
             application.manage(ProjectLibrary::new()?);
+            application.manage(crate::commands::reader::ReaderState::new()?);
             application.manage(Processing::default());
             application.manage(BatchState::default());
             application.manage(CanvasChannel::default());
@@ -123,7 +118,6 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
             application.manage(DownloadChannel::default());
             application.manage(ResourceChannel::default());
             application.manage(ProjectChannel::default());
-            application.manage(Initialization::default());
 
             let handle = application.handle().clone();
             application.manage(koharu_desktop::Desktop::new()?);
@@ -145,10 +139,9 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
                 .context("failed to focus the main window")?;
             let initialization_handle = handle.clone();
             drop(tauri::async_runtime::spawn(async move {
-                initialize(initialization_handle.clone())
-                    .await
-                    .expect("failed to initialize the desktop runtime");
-                initialization_handle.state::<Initialization>().ready();
+                if let Err(error) = initialize(initialization_handle).await {
+                    tracing::error!(%error, "failed to initialize the translation runtime");
+                }
             }));
 
             let mut downloads = koharu_runtime::download::subscribe();
