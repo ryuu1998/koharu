@@ -19,6 +19,19 @@ export const commands = {
 	can_undo: boolean,
 	can_redo: boolean,
 } | null>) => __TAURI_INVOKE<StartupState>("subscribe", { onCanvas: mapChannel(onCanvas, (v) => ({...v,revision:v.revision==null?v.revision:v.revision})), onJob, onDownload, onResources: mapChannel(onResources, (v) => ({...v,devices:v.devices.map(i=>({...i,memory_budget:i.memory_budget==null?i.memory_budget:i.memory_budget,memory_used:i.memory_used==null?i.memory_used:i.memory_used,utilization:i.utilization==null?i.utilization:i.utilization}))})), onProject }).then((v) => (({...v,preferences:({...v.preferences,pipeline:({...v.preferences.pipeline,translation:({...v.preferences.pipeline.translation,generation:({...v.preferences.pipeline.translation.generation,temperature:v.preferences.pipeline.translation.generation.temperature==null?v.preferences.pipeline.translation.generation.temperature:v.preferences.pipeline.translation.generation.temperature,top_p:v.preferences.pipeline.translation.generation.top_p==null?v.preferences.pipeline.translation.generation.top_p:v.preferences.pipeline.translation.generation.top_p,min_p:v.preferences.pipeline.translation.generation.min_p==null?v.preferences.pipeline.translation.generation.min_p:v.preferences.pipeline.translation.generation.min_p,repeat_penalty:v.preferences.pipeline.translation.generation.repeat_penalty==null?v.preferences.pipeline.translation.generation.repeat_penalty:v.preferences.pipeline.translation.generation.repeat_penalty,frequency_penalty:v.preferences.pipeline.translation.generation.frequency_penalty==null?v.preferences.pipeline.translation.generation.frequency_penalty:v.preferences.pipeline.translation.generation.frequency_penalty,presence_penalty:v.preferences.pipeline.translation.generation.presence_penalty==null?v.preferences.pipeline.translation.generation.presence_penalty:v.preferences.pipeline.translation.generation.presence_penalty})}),processor:({...v.preferences.pipeline.processor,"koharu-layout-rfdetr-seg-2xl":v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"]==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"]:({...v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"],text_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].text_threshold==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].text_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].text_threshold,bubble_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].bubble_threshold==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].bubble_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].bubble_threshold,panel_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].panel_threshold==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].panel_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].panel_threshold})})})}),jobs:v.jobs.map(i=>i),canvas:({...v.canvas,revision:v.canvas.revision==null?v.canvas.revision:v.canvas.revision})}) as typeof v)),
+	getReaderLibrary: () => __TAURI_INVOKE<ReaderLibrary>("get_reader_library").then((v) => (({...v,books:v.books.map(i=>({...i,progress:i.progress==null?i.progress:i.progress}))}) as typeof v)),
+	browseReaderFolder: () => __TAURI_INVOKE<{
+	folders: string[],
+	books: ReaderBook[],
+	settings: ReaderSettings,
+	folder_errors: ReaderFolderError[],
+} | null>("browse_reader_folder").then((v) => (v==null?v:({...v,books:v.books.map(i=>({...i,progress:i.progress==null?i.progress:i.progress}))}) as typeof v)),
+	refreshReaderLibrary: () => __TAURI_INVOKE<ReaderLibrary>("refresh_reader_library").then((v) => (({...v,books:v.books.map(i=>({...i,progress:i.progress==null?i.progress:i.progress}))}) as typeof v)),
+	openReaderBook: (book: string) => __TAURI_INVOKE<ReaderSession>("open_reader_book", { book }),
+	getReaderPage: (session: string, page: number) => __TAURI_INVOKE<ReaderBytes>("get_reader_page", { session, page }),
+	closeReaderBook: (session: string) => __TAURI_INVOKE<null>("close_reader_book", { session }),
+	saveReaderSettings: (settings: ReaderSettings) => __TAURI_INVOKE<ReaderSettings>("save_reader_settings", { settings }),
+	saveReaderProgress: (book: string, page: number, offset: number, finished: boolean) => __TAURI_INVOKE<null>("save_reader_progress", { book, page, offset, finished }),
 	browseBatchSource: () => __TAURI_INVOKE<{
 	path: string,
 	default_output: string,
@@ -512,6 +525,64 @@ export type Quantization = {
 };
 
 export type RasterLayerKind = "cleanup" | "paint";
+
+export type ReaderBook = {
+	id: string,
+	path: string,
+	name: string,
+	folder: string,
+	pages: number,
+	size: number,
+	added_at: number,
+	thumbnail: string | null,
+	error: string | null,
+	progress: ReaderProgress | null,
+};
+
+export type ReaderBytes = number[];
+
+export type ReaderDirection = "rtl" | "ltr";
+
+export type ReaderFit = "page" | "width" | "height" | "original";
+
+export type ReaderFolderError = {
+	path: string,
+	error: string,
+};
+
+export type ReaderLayout = "single" | "spread" | "webtoon";
+
+export type ReaderLibrary = {
+	folders: string[],
+	books: ReaderBook[],
+	settings: ReaderSettings,
+	folder_errors: ReaderFolderError[],
+};
+
+export type ReaderPageInfo = {
+	name: string,
+	mime: string,
+};
+
+export type ReaderProgress = {
+	page: number,
+	offset: number,
+	finished: boolean,
+};
+
+export type ReaderSession = {
+	id: string,
+	name: string,
+	pages: ReaderPageInfo[],
+	page: number,
+};
+
+export type ReaderSettings = {
+	layout: ReaderLayout,
+	direction: ReaderDirection,
+	fit: ReaderFit,
+	zoom: number,
+};
 
 export type Reasoning = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
