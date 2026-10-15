@@ -47,6 +47,7 @@ pub(super) async fn translate(
             source: request.source_language.map(|language| language.tag()),
             format: "text",
         }),
+        disposition,
     )
     .await?;
     Ok(response
@@ -80,4 +81,47 @@ struct Data {
 struct Translation {
     #[serde(rename = "translatedText")]
     translated_text: String,
+}
+pub(super) fn disposition(
+    status: reqwest::StatusCode,
+    body: &serde_json::Value,
+) -> super::Disposition {
+    let reasons = body
+        .pointer("/error/errors")
+        .and_then(serde_json::Value::as_array);
+    if reasons
+        .into_iter()
+        .flatten()
+        .any(|error| error["reason"] == "dailyLimitExceeded")
+    {
+        return super::Disposition::Quota;
+    }
+    if reasons.into_iter().flatten().any(|error| {
+        error["reason"] == "rateLimitExceeded" || error["reason"] == "userRateLimitExceeded"
+    }) {
+        return super::Disposition::Retry(None);
+    }
+    super::http_disposition(status, body)
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    #[test]
+    fn classifies_provider_errors() {
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::FORBIDDEN,
+                &serde_json::json!({"error":{"errors":[{"reason":"dailyLimitExceeded"}]}})
+            ),
+            super::super::Disposition::Quota
+        );
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::FORBIDDEN,
+                &serde_json::json!({"error":{"errors":[{"reason":"rateLimitExceeded"}]}})
+            ),
+            super::super::Disposition::Retry(None)
+        );
+    }
 }

@@ -158,6 +158,7 @@ half = "2.7.1"
 js-sys = "0.3.106"
 lazy_static = "1.5.1"
 ndarray = "0.17.2"
+httpdate = "1.0.3"
 rand = "0.10.3"
 safetensors = "0.8.0"
 serde-wasm-bindgen = "0.6.5"
@@ -187,6 +188,23 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.koharu-rasterizer]
+opt-level = 3
+
+# Keep CPU image preparation, model postprocessing, scene layout, and export
+# optimized while retaining the debug app's assertions and inspection tools.
+[profile.dev.package.koharu-ml]
+opt-level = 2
+
+[profile.dev.package.koharu-pipeline]
+opt-level = 2
+
+[profile.dev.package.koharu-renderer]
+opt-level = 2
+
+[profile.dev.package.koharu-app]
+opt-level = 2
+
+[profile.dev.package.fast_image_resize]
 opt-level = 3
 
 [profile.dev.package.postcard]

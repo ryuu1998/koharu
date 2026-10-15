@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/t
 
 export function StartView() {
   const { t } = useTranslation()
-  const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const setWorkspace = useKoharuStore((state) => state.setWorkspace)
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [name, setName] = useState('')
   const [busy, setBusy] = useState<string | null>('list')
@@ -114,7 +114,7 @@ export function StartView() {
                       size='icon-sm'
                       className='size-8 shrink-0 text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground'
                       aria-label={t('menu.settings')}
-                      onClick={() => setSettingsOpen(true)}
+                      onClick={() => setWorkspace('settings')}
                     />
                   }
                 >

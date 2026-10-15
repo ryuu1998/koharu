@@ -90,7 +90,7 @@ beforeEach(() => {
     inspector: 'copy',
     processingScope: 'selected-pages',
     processingStages: ['detection', 'ocr', 'translation', 'inpainting'],
-    settingsOpen: false,
+    workspace: 'project',
     shortcuts: defaultShortcuts,
   })
 })

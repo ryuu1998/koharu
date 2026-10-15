@@ -114,6 +114,7 @@ impl Arguments {
                     reasoning: true,
                 },
                 generation: GenerationConfig::default(),
+                remote: Default::default(),
                 target_language: self.target_language,
                 instructions: self.translation_instructions.clone(),
             },

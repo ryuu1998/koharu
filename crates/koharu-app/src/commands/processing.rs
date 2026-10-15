@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use anyhow::{Context as _, Result};
-use koharu_pipeline::{Committer, Progress, RunStatus, StageOutput, StopToken};
+use koharu_pipeline::{Committer, Progress, RunControl, RunStatus, StageOutput};
 use koharu_scene::Snapshot;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,7 @@ pub enum JobState {
 
 #[derive(Default)]
 pub(crate) struct Processing {
-    pub(crate) stops: Mutex<HashMap<JobId, StopToken>>,
+    pub(crate) stops: Mutex<HashMap<JobId, RunControl>>,
     pub(crate) jobs: Mutex<HashMap<JobId, Job>>,
     pub(crate) inpainting_mask: Mutex<Option<koharu_pipeline::InpaintingMask>>,
 }
@@ -90,7 +90,7 @@ pub(crate) async fn process(
         .context("no project is open")?
         .snapshot();
     let id = JobId::new();
-    let stop = StopToken::default();
+    let stop = RunControl::default();
     {
         let mut stops = processing.stops.lock();
         if !stops.is_empty() {

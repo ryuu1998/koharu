@@ -30,6 +30,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
             .get(MODELS_URL)
             .header("x-api-key", api_key.expose_secret())
             .header("anthropic-version", "2023-06-01"),
+        disposition,
     )
     .await?;
     Ok(response
@@ -81,6 +82,7 @@ pub(super) async fn translate(
             .header("x-api-key", api_key.expose_secret())
             .header("anthropic-version", "2023-06-01")
             .json(&body),
+        disposition,
     )
     .await?;
     let text = response
@@ -207,6 +209,25 @@ struct CapabilitySupport {
     supported: bool,
 }
 
+pub(super) fn disposition(
+    status: reqwest::StatusCode,
+    body: &serde_json::Value,
+) -> super::Disposition {
+    let message = body
+        .pointer("/error/message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if message.contains("credit balance")
+        || message.contains("monthly spend")
+        || message.contains("spend limit")
+    {
+        super::Disposition::Quota
+    } else {
+        super::http_disposition(status, body)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +293,28 @@ mod tests {
                 .types
                 .adaptive
                 .supported
+        );
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    #[test]
+    fn classifies_provider_errors() {
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &serde_json::json!({"error":{"type":"rate_limit_error","message":"Monthly spend limit exceeded"}})
+            ),
+            super::super::Disposition::Quota
+        );
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &serde_json::json!({"error":{"type":"rate_limit_error","message":"Rate limit"}})
+            ),
+            super::super::Disposition::Retry(None)
         );
     }
 }

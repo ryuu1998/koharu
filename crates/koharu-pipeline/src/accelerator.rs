@@ -4,11 +4,17 @@ use crate::{Stage, resources::ResourceMonitor, stages::Stages};
 
 pub(crate) struct AcceleratorGate {
     resources: Arc<ResourceMonitor>,
-    lane: Option<Arc<tokio::sync::Semaphore>>,
+    work: Option<Arc<tokio::sync::RwLock<()>>>,
 }
 
-pub(crate) struct AcceleratorPermit {
-    _lane: Option<tokio::sync::OwnedSemaphorePermit>,
+pub(crate) enum AcceleratorPermit {
+    Inference {
+        _guard: tokio::sync::OwnedRwLockReadGuard<()>,
+    },
+    Recovery {
+        _guard: tokio::sync::OwnedRwLockWriteGuard<()>,
+    },
+    Cpu,
 }
 
 impl AcceleratorGate {
@@ -17,45 +23,33 @@ impl AcceleratorGate {
             && device.device_type != koharu_ml::DeviceType::Cpu;
         Self {
             resources,
-            // Heterogeneous CUDA model pairs took 2.5-4x longer together than
-            // back-to-back on the target workload. Keep accelerator work
-            // serialized while loaded weights remain resident between pages.
-            lane: accelerated.then(|| Arc::new(tokio::sync::Semaphore::new(1))),
+            // Stage capacities bound ordinary inference independently. Only
+            // memory recovery needs exclusive access to unload other models.
+            work: accelerated.then(|| Arc::new(tokio::sync::RwLock::new(()))),
         }
     }
 
     pub(crate) async fn acquire(&self) -> AcceleratorPermit {
-        let Some(lane) = self.lane.as_ref() else {
-            return AcceleratorPermit::cpu();
+        let Some(work) = self.work.as_ref() else {
+            return AcceleratorPermit::Cpu;
         };
-        AcceleratorPermit::accelerator(
-            lane.clone()
-                .acquire_owned()
-                .await
-                .expect("accelerator lane is never closed"),
-        )
+        AcceleratorPermit::Inference {
+            _guard: work.clone().read_owned().await,
+        }
     }
 
     pub(crate) async fn recover(&self, stage: Stage, stages: &Stages) -> AcceleratorPermit {
-        let permit = self.acquire().await;
-        if self.lane.is_none() {
-            return permit;
-        }
+        let Some(work) = self.work.as_ref() else {
+            return AcceleratorPermit::Cpu;
+        };
+        let permit = AcceleratorPermit::Recovery {
+            _guard: work.clone().write_owned().await,
+        };
         if unload_other_models(stage, stages) {
             let mut changed = self.resources.subscribe();
             let _ = tokio::time::timeout(Duration::from_millis(600), changed.changed()).await;
         }
         permit
-    }
-}
-
-impl AcceleratorPermit {
-    fn accelerator(lane: tokio::sync::OwnedSemaphorePermit) -> Self {
-        Self { _lane: Some(lane) }
-    }
-
-    fn cpu() -> Self {
-        Self { _lane: None }
     }
 }
 
@@ -69,4 +63,61 @@ fn unload_other_models(requested: Stage, stages: &Stages) -> bool {
         }
     }
     unloaded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gate() -> AcceleratorGate {
+        AcceleratorGate {
+            resources: ResourceMonitor::new(&koharu_ml::Device::cpu()),
+            work: Some(Arc::new(tokio::sync::RwLock::new(()))),
+        }
+    }
+
+    #[tokio::test]
+    async fn independent_inference_jobs_do_not_wait_for_each_other() {
+        let gate = gate();
+        let detection = gate.acquire().await;
+        let ocr = tokio::time::timeout(Duration::from_secs(1), gate.acquire())
+            .await
+            .expect("OCR must run while detection retains its guard");
+        let inpainting = tokio::time::timeout(Duration::from_secs(1), gate.acquire())
+            .await
+            .expect("cleanup must run alongside detection and OCR");
+        drop((detection, ocr, inpainting));
+    }
+
+    #[tokio::test]
+    async fn recovery_drains_inference_and_blocks_new_model_work() {
+        let gate = gate();
+        let translator = koharu_translator::Translator::from_config(
+            koharu_ml::Device::cpu(),
+            koharu_config::Config::memory(koharu_translator::ProvidersConfig::default()),
+        )
+        .unwrap();
+        let stages = Stages::new(
+            &crate::PipelineConfig::default(),
+            translator,
+            &koharu_ml::Device::cpu(),
+        )
+        .unwrap();
+        let inference = gate.acquire().await;
+        let recovery = gate.recover(Stage::Detection, &stages);
+        tokio::pin!(recovery);
+        assert!(futures::poll!(recovery.as_mut()).is_pending());
+        let next = gate.acquire();
+        tokio::pin!(next);
+        assert!(futures::poll!(next.as_mut()).is_pending());
+        drop(inference);
+        let exclusive = tokio::time::timeout(Duration::from_secs(1), recovery)
+            .await
+            .unwrap();
+        assert!(futures::poll!(next.as_mut()).is_pending());
+        drop(exclusive);
+        tokio::time::timeout(Duration::from_secs(1), next)
+            .await
+            .unwrap();
+    }
 }

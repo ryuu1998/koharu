@@ -129,9 +129,97 @@
   .startup-spinner {
     animation: koharu-startup-spin 1800ms linear infinite !important;
   }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .batch-queue-item:not([data-dragging='true']) {
+      transition: transform 650ms cubic-bezier(0.22, 0.8, 0.22, 1) !important;
+    }
+
+    .batch-queue-cover {
+      transition:
+        width 650ms cubic-bezier(0.22, 0.8, 0.22, 1),
+        height 650ms cubic-bezier(0.22, 0.8, 0.22, 1) !important;
+    }
+  }
 }
 
 @layer components {
+  .batch-chapter-cover {
+    container: chapter-cover / inline-size;
+  }
+
+  .batch-chapter-scrim {
+    position: absolute;
+    inset: 24% 0 0;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(12 13 16 / 0.04) 20%,
+      rgb(12 13 16 / 0.28) 43%,
+      rgb(12 13 16 / 0.66) 67%,
+      rgb(12 13 16 / 0.88) 85%,
+      rgb(12 13 16 / 0.96)
+    );
+  }
+
+  .batch-chapter-title {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    color: #f7f7f8;
+    font-size: clamp(10px, 11.5cqw, 12px);
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+  }
+
+  .batch-chapter-translated {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    display: inline-flex;
+    max-width: calc(100% - 34px);
+    height: 18px;
+    align-items: center;
+    gap: 3px;
+    padding: 0 4px;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    border-radius: 999px;
+    background: rgb(17 25 22 / 0.82);
+    color: #a3e2b8;
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1;
+    backdrop-filter: blur(12px);
+  }
+
+  @container chapter-cover (width < 96px) {
+    .batch-chapter-translated-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .batch-chapter-translated {
+      width: 18px;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .batch-chapter-title {
+      right: 5px;
+      bottom: 5px;
+      left: 5px;
+    }
+  }
+
   .workspace-corner-mask {
     --workspace-corner-radius: calc(var(--radius) + 0.5rem);
     overflow: visible !important;

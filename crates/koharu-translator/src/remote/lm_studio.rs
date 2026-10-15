@@ -86,7 +86,7 @@ pub(super) async fn translate(
         Some(api_key) => http.bearer_auth(api_key.expose_secret()),
         None => http,
     };
-    let response: ChatResponse = send_json("lm-studio", http).await?;
+    let response: ChatResponse = send_json("lm-studio", http, super::openai::disposition).await?;
     let text = response
         .choices
         .into_iter()
@@ -105,7 +105,8 @@ pub(super) async fn models(client: &Client, config: &LmStudioConfig) -> Result<V
         Some(api_key) => request.bearer_auth(api_key.expose_secret()),
         None => request,
     };
-    let response: ModelsResponse = send_json("lm-studio", request).await?;
+    let response: ModelsResponse =
+        send_json("lm-studio", request, super::openai::disposition).await?;
     Ok(response
         .models
         .into_iter()

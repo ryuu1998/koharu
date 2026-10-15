@@ -21,10 +21,11 @@ pub use config::{
     DetectionModel, InpaintingModel, OcrModel, PipelineConfig, ProcessorConfig, TranslationConfig,
 };
 pub use error::{ErrorKind, PipelineError};
+pub use koharu_runtime::RunControl;
 pub use pipeline::Pipeline;
 pub use progress::{Progress, ProgressSink};
 pub use report::{Committer, Report, RunStatus, StageOutput};
-pub use request::{InpaintingMask, Operation, Request, StopToken};
+pub use request::{InpaintingMask, Operation, Request};
 pub use resources::{DeviceResources, ResourceSnapshot};
 pub use scope::{Bounds, Scope};
 pub use stage::Stage;

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { ModelPicker } from '@/components/controls/ModelPicker'
 import { GenerationPreferences } from '@/components/preferences/GenerationPreferences'
 import {
+  NumberField,
   PreferencePage,
   PreferenceRow,
   PreferenceSection,
@@ -114,6 +115,32 @@ export function TranslationPreferences({
         value={value.generation}
         onChange={(generation) => onChange({ ...value, generation })}
       />
+
+      {value.model.provider !== 'local' && (
+        <PreferenceSection title={t('settings.translation.requests')}>
+          <PreferenceRow
+            title={t('settings.translation.concurrency')}
+            description={t('settings.translation.concurrencyDescription')}
+          >
+            <NumberField
+              label={t('settings.translation.concurrency')}
+              value={value.remote?.concurrency ?? null}
+              min={1}
+              max={16}
+              step={1}
+              onChange={(concurrency) =>
+                onChange({
+                  ...value,
+                  remote:
+                    concurrency === null
+                      ? undefined
+                      : { concurrency: Math.max(1, Math.min(16, Math.round(concurrency))) },
+                })
+              }
+            />
+          </PreferenceRow>
+        </PreferenceSection>
+      )}
 
       <PreferenceSection title={t('settings.translation.output')}>
         <PreferenceRow

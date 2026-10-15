@@ -29,6 +29,7 @@ const preferences: Preferences = {
     detection: { model: 'koharu-layout-rfdetr-seg-2xl' },
     ocr: { model: 'paddleocr-vl-1.6' },
     translation: {
+      remote: { concurrency: 6 },
       model: {
         provider: 'local',
         model: 'lfm2.5-1.2b-instruct',

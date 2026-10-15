@@ -23,6 +23,15 @@ pub(super) struct Processor {
 }
 
 impl Processor {
+    pub(super) async fn prefetch(&self) -> Result<()> {
+        match self.config {
+            OcrModel::MangaOcr => MangaOcr::prefetch().await,
+            OcrModel::BaberuOcr => BaberuOcr::prefetch().await,
+            OcrModel::HayaiOcr => HayaiOcr::prefetch().await,
+            OcrModel::PaddleOcrVl1_6 => PaddleOCRVLQuantized::prefetch().await,
+        }
+    }
+
     pub(super) fn new(config: OcrModel, device: koharu_ml::Device) -> Self {
         Self {
             config,
