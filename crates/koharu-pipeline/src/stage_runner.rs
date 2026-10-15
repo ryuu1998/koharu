@@ -86,12 +86,6 @@ impl StageRunner {
         }
         let accelerated = self.stages.uses_accelerator(job.stage);
         let admission_started = Instant::now();
-        let permit = if accelerated {
-            Some(self.accelerator.acquire().await)
-        } else {
-            None
-        };
-        let admission_elapsed = admission_started.elapsed();
         let _activity = if accelerated {
             let Some(activity) = job.stop.admit().await else {
                 return Ok(StageOutcome::Stopped);
@@ -103,6 +97,17 @@ impl StageRunner {
             }
             None
         };
+        // A paused job must not hold a read guard that prevents admitted memory
+        // recovery from draining. Admit the activity before taking the GPU guard.
+        let permit = if accelerated {
+            Some(self.accelerator.acquire().await)
+        } else {
+            None
+        };
+        let admission_elapsed = admission_started.elapsed();
+        if job.stop.stopped() {
+            return Ok(StageOutcome::Stopped);
+        }
         let first = self.load_and_process(job, model, admission_elapsed).await;
         let failure = match first {
             Ok(outcome) => return Ok(outcome),

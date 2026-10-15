@@ -505,41 +505,17 @@ async fn process_chapter(
     // page IDs wait in this queue; rendered JPEGs are staged on disk.
     let snapshot = session.lock().await.snapshot();
     let mut committer = SessionCommitter(Arc::clone(&session));
-    let processing_session = session.clone();
-    let processing_stop = stop.clone();
-    let processing = async move {
-        // Local models share one accelerator lane. Finish detection before
-        // admitting downstream models, rather than queueing the next detector
-        // call behind OCR and cleanup after every page.
-        for operation in [
-            Operation::Only {
-                stage: Stage::Detection,
-            },
-            Operation::Stages {
-                stages: vec![Stage::Ocr, Stage::Translation, Stage::Inpainting],
-            },
-        ] {
-            let scene = processing_session.lock().await.snapshot();
-            let report = pipeline
-                .execute(
-                    scene,
-                    Request {
-                        operation,
-                        scope: Scope::Project,
-                        stop: processing_stop.clone(),
-                        progress: Some(callback.clone()),
-                        inpainting_mask: None,
-                    },
-                    &mut committer,
-                )
-                .await?;
-            ensure!(
-                report.status == RunStatus::Completed && !processing_stop.stopped(),
-                "batch stopped"
-            );
-        }
-        Ok::<_, anyhow::Error>(())
-    };
+    let processing = pipeline.execute(
+        snapshot.clone(),
+        Request {
+            operation: Operation::Full,
+            scope: Scope::Project,
+            stop: stop.clone(),
+            progress: Some(callback),
+            inpainting_mask: None,
+        },
+        &mut committer,
+    );
     let render_session = session.clone();
     let ready = stream::unfold(ready_receiver, move |mut receiver| {
         let session = render_session.clone();
@@ -573,8 +549,11 @@ async fn process_chapter(
     // Neither a rendering error nor a pipeline error may drop native work that
     // was already admitted. Publication waits for both sides to finish.
     let (report, prepared) = tokio::join!(processing, rendering);
-    report?;
-    ensure!(!stop.stopped(), "batch stopped");
+    let report = report?;
+    ensure!(
+        report.status == RunStatus::Completed && !stop.stopped(),
+        "batch stopped"
+    );
     let processing_elapsed = processing_started.elapsed();
     let prepared = prepared?;
     let Some(_export_activity) = stop.admit().await else {
