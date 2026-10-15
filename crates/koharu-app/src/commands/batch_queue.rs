@@ -17,6 +17,8 @@ pub struct BatchEntry {
 pub(super) struct WorkItem {
     pub path: PathBuf,
     pub output: PathBuf,
+    source_key: PathBuf,
+    output_key: PathBuf,
 }
 
 /// Only this queue may claim work. Events identify the source, never a mutable index.
@@ -60,7 +62,7 @@ impl Queue {
                 "input must be a CBZ archive"
             );
             let source = path_key(&std::fs::canonicalize(&entry.path)?);
-            if !sources.insert(source) {
+            if !sources.insert(source.clone()) {
                 continue;
             }
             let name = entry.path.file_name().context("chapter has no filename")?;
@@ -73,10 +75,13 @@ impl Queue {
                 target = directory.join(format!("{stem} ({suffix}).cbz"));
                 suffix += 1;
             }
-            outputs.insert(path_key(&absolute_target(&target)?));
+            let output_key = path_key(&absolute_target(&target)?);
+            outputs.insert(output_key.clone());
             accepted.push(WorkItem {
                 path: entry.path,
                 output: target,
+                source_key: source,
+                output_key,
             });
         }
         ensure!(
@@ -124,6 +129,19 @@ impl Queue {
 
     pub(super) fn failed(&self, path: &Path) -> bool {
         self.failed.contains_key(path)
+    }
+
+    pub(super) fn remove(&mut self, path: &Path) -> Result<()> {
+        ensure!(self.accepting, "this batch has finished");
+        let index = self
+            .pending
+            .iter()
+            .position(|entry| entry.path == path)
+            .context("only waiting chapters can be removed")?;
+        let entry = self.pending.remove(index).expect("validated pending index");
+        self.sources.remove(&entry.source_key);
+        self.outputs.remove(&entry.output_key);
+        Ok(())
     }
 
     pub(super) fn reorder(&mut self, path: &Path, before: Option<&Path>) -> Result<()> {
@@ -184,6 +202,43 @@ fn absolute_target(path: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removal_protects_active_work_and_releases_reservations_for_readding() {
+        let dir = tempfile::tempdir().unwrap();
+        let entries: Vec<_> = ["a.cbz", "b.cbz", "c.cbz"]
+            .into_iter()
+            .map(|name| {
+                let path = dir.path().join(name);
+                std::fs::write(&path, b"archive").unwrap();
+                BatchEntry {
+                    path,
+                    output: dir.path().join("out"),
+                }
+            })
+            .collect();
+        let mut queue = Queue::default();
+        queue.append(entries.clone()).unwrap();
+        let active = queue.claim().unwrap();
+        let original_output = queue.pending[0].output.clone();
+        assert!(queue.remove(&active.path).is_err());
+        queue.remove(&entries[1].path).unwrap();
+        assert!(entries[1].path.is_file());
+        assert_eq!(
+            queue.paths(),
+            [active.path.clone(), entries[2].path.clone()]
+        );
+        queue.append(vec![entries[1].clone()]).unwrap();
+        assert_eq!(queue.pending.back().unwrap().output, original_output);
+        queue.finish(false);
+        assert!(queue.remove(&active.path).is_err());
+        assert_eq!(queue.claim().unwrap().path, entries[2].path);
+        queue.finish(false);
+        assert_eq!(queue.claim().unwrap().path, entries[1].path);
+        queue.finish(false);
+        assert!(queue.claim().is_none());
+        assert!(queue.remove(&entries[1].path).is_err());
+    }
 
     #[test]
     fn retries_failed_work_at_the_end_without_changing_active_or_output() {

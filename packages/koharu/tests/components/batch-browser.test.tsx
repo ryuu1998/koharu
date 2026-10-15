@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BatchPage } from '@/components/batch/BatchPage'
-import { addBatchSource, sortBatchChapters, useBatchStore } from '@/lib/batch'
+import { addBatchSource, removeBatch, sortBatchChapters, useBatchStore } from '@/lib/batch'
 import { useKoharuStore } from '@/lib/store'
 import { commands, type BatchSource } from '@koharu/bridge/protocol'
 import type { BatchEvent, BatchReport } from '@koharu/bridge/protocol'
@@ -95,6 +95,59 @@ const sortableSource: BatchSource = {
 }
 
 describe('batch chapter browser', () => {
+  it('removes idle selections without removing the archive from the library', async () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    await useBatchStore.getState().select(paths)
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove chapter2.cbz from queue' }))
+    expect(useBatchStore.getState().selected).toEqual([paths[0], paths[2]])
+    expect(useBatchStore.getState().source?.chapters).toHaveLength(3)
+    expect(screen.getByRole('checkbox', { name: 'chapter2.cbz' })).not.toBeChecked()
+  })
+
+  it('removes waiting work through native events while the active chapter stays fixed', async () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    await useBatchStore.getState().select(paths)
+    let events: { onmessage: (event: BatchEvent) => void } | undefined
+    let finish: ((report: BatchReport) => void) | undefined
+    vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
+      events = channel
+      channel.onmessage({ event: 'queue_changed', paths })
+      channel.onmessage({
+        event: 'chapter_started',
+        path: paths[0],
+        name: 'chapter1.cbz',
+        pages: 32,
+      })
+      return new Promise<BatchReport>((resolve) => {
+        finish = resolve
+      })
+    })
+    const remove = vi.spyOn(commands, 'removeBatch').mockImplementation(async () => {
+      events?.onmessage({ event: 'queue_changed', paths: [paths[0], paths[2]] })
+      return null
+    })
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Translate 3 chapters' }))
+    await waitFor(() => expect(useBatchStore.getState().activePath).toBe(paths[0]))
+    expect(
+      screen.queryByRole('button', { name: 'Remove chapter1.cbz from queue' }),
+    ).not.toBeInTheDocument()
+    await removeBatch(paths[0])
+    expect(remove).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove chapter2.cbz from queue' }))
+    await waitFor(() =>
+      expect(remove).toHaveBeenCalledWith(useBatchStore.getState().runId, paths[1]),
+    )
+    expect(useBatchStore.getState().queue).toEqual([paths[0], paths[2]])
+    expect(useBatchStore.getState().activePath).toBe(paths[0])
+    await act(async () => {
+      finish?.({ completed: 0, skipped: 0, failures: [], stopped: true })
+    })
+  })
+
   it('keeps completed history in view after the final chapter finishes', () => {
     useBatchStore.getState().setSource(sortableSource)
     const paths = sortableSource.chapters.map((chapter) => chapter.path)

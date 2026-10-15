@@ -624,6 +624,7 @@
     "paused": "Paused",
     "resume": "Resume",
     "stageProgress": "Chapter stages",
+    "removeFromQueue": "Quitar {{chapter}} de la cola",
     "dragToReorder": "Drag to reorder",
     "addArchives": "Add archives",
     "useCurrentOutput": "Current output folder",

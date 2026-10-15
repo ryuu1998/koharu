@@ -426,6 +426,20 @@ export async function reorderBatch(path: string, before: string | null): Promise
   useBatchStore.setState({ selected: order, queue: [] })
 }
 
+export async function removeBatch(path: string): Promise<void> {
+  const state = useBatchStore.getState()
+  if (state.stopping) return
+  if (state.running) {
+    if (!state.runId || state.statuses[path] || state.activePath === path) return
+    await call(commands.removeBatch, state.runId, path)
+    return
+  }
+  useBatchStore.setState((state) => ({
+    selected: state.selected.filter((entry) => entry !== path),
+    queue: state.queue.filter((entry) => entry !== path),
+  }))
+}
+
 export async function retryBatch(path: string): Promise<void> {
   const state = useBatchStore.getState()
   if (state.stopping || state.statuses[path] !== 'failed') return

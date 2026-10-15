@@ -624,6 +624,7 @@
     "paused": "Paused",
     "resume": "Resume",
     "stageProgress": "Chapter stages",
+    "removeFromQueue": "Убрать {{chapter}} из очереди",
     "dragToReorder": "Drag to reorder",
     "addArchives": "Add archives",
     "useCurrentOutput": "Current output folder",

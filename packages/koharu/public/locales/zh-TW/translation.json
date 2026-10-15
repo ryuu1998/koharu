@@ -624,6 +624,7 @@
     "paused": "Paused",
     "resume": "Resume",
     "stageProgress": "Chapter stages",
+    "removeFromQueue": "從佇列中移除{{chapter}}",
     "dragToReorder": "Drag to reorder",
     "addArchives": "Add archives",
     "useCurrentOutput": "Current output folder",

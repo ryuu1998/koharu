@@ -33,6 +33,7 @@ export const commands = {
 	resumeBatch: (id: string) => __TAURI_INVOKE<null>("resume_batch", { id }),
 	appendBatch: (id: string, chapters: BatchEntry[]) => __TAURI_INVOKE<null>("append_batch", { id, chapters }),
 	reorderBatch: (id: string, path: string, before: string | null) => __TAURI_INVOKE<null>("reorder_batch", { id, path, before }),
+	removeBatch: (id: string, path: string) => __TAURI_INVOKE<null>("remove_batch", { id, path }),
 	retryBatch: (id: string, path: string) => __TAURI_INVOKE<null>("retry_batch", { id, path }),
 	getProject: () => __TAURI_INVOKE<{
 	name: string,

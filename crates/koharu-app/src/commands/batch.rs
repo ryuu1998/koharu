@@ -217,6 +217,25 @@ pub(crate) async fn reorder_batch(
 
 #[tauri::command]
 #[specta::specta]
+pub(crate) async fn remove_batch(
+    id: String,
+    path: PathBuf,
+    batch: State<'_, BatchState>,
+) -> std::result::Result<(), Error> {
+    let run = current(&batch, &id)?;
+    if run.stop.stopped() {
+        return Err(anyhow::anyhow!("the batch is stopping").into());
+    }
+    let mut queue = run.queue.lock();
+    queue.remove(&path)?;
+    (run.events)(BatchEvent::QueueChanged {
+        paths: queue.paths(),
+    });
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn retry_batch(
     id: String,
     path: PathBuf,

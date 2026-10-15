@@ -2,6 +2,7 @@
 
 import {
   Check,
+  Trash2,
   FileArchive,
   GripVertical,
   PanelRightClose,
@@ -12,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BatchStageProgress } from '@/components/batch/BatchStageProgress'
-import { reorderBatch, retryBatch, useBatchStore } from '@/lib/batch'
+import { removeBatch, reorderBatch, retryBatch, useBatchStore } from '@/lib/batch'
 import { Button } from '@koharu/ui/components/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@koharu/ui/components/dialog'
 import { Progress } from '@koharu/ui/components/progress'
@@ -346,6 +347,18 @@ export function BatchQueue() {
                       }}
                     >
                       {t('batch.retry')}
+                    </Button>
+                  )}
+                  {canMove && selected.includes(path) && (
+                    <Button
+                      variant='ghost'
+                      size='icon-xs'
+                      aria-label={t('batch.removeFromQueue', { chapter: chapter.name })}
+                      title={t('batch.removeFromQueue', { chapter: chapter.name })}
+                      className='shrink-0 text-muted-foreground hover:text-destructive'
+                      onClick={() => void removeBatch(path).catch(() => undefined)}
+                    >
+                      <Trash2 className='size-3.5' strokeWidth={1.75} />
                     </Button>
                   )}
                   {canMove && (
