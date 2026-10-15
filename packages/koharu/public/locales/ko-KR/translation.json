@@ -647,5 +647,75 @@
     "noReadableArchives": "No readable CBZ archives in this folder.",
     "addCount_one": "Add {{count}} chapter",
     "addCount_other": "Add {{count}} chapters"
+  },
+  "reader": {
+    "library": "Library",
+    "folders": "Folders",
+    "search": "Search chapters",
+    "refresh": "Refresh library",
+    "addFolder": "Add folder",
+    "sortBy": "Sort by",
+    "ascending": "Ascending",
+    "descending": "Descending",
+    "bookCount": "{{count}} chapters",
+    "overlayCards": "Show titles on covers",
+    "captionCards": "Show titles below covers",
+    "cardSize": "Card size",
+    "loading": "Loading library…",
+    "empty": "Your reading library",
+    "emptyHint": "Add a folder to browse and read its CBZ chapters. Files stay where they are.",
+    "noMatches": "No matching chapters",
+    "unavailable": "Unavailable",
+    "finished": "Finished",
+    "pages": "{{count}} pages",
+    "settings": "Reading settings",
+    "pageLayout": "Page layout",
+    "readingDirection": "Reading direction",
+    "pageFit": "Page fit",
+    "zoom": "Zoom",
+    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in",
+    "resetZoom": "Reset zoom",
+    "webtoonFit": "Webtoon keeps all pages at the same width.",
+    "globalSettings": "These settings apply to every chapter.",
+    "fullscreen": "Full screen",
+    "fullscreenUnavailable": "Full screen is unavailable in this window.",
+    "previous": "Previous page",
+    "next": "Next page",
+    "goToPage": "Go to page",
+    "pageNumber": "Page number",
+    "page": "Page {{page}}",
+    "markFinished": "Mark finished",
+    "markUnread": "Mark unread",
+    "closeSettings": "Close reading settings",
+    "reload": "Reload chapter",
+    "showControls": "Show reading controls",
+    "filter": {
+      "all": "All chapters",
+      "reading": "Continue reading",
+      "unread": "Unread",
+      "finished": "Finished"
+    },
+    "sort": {
+      "name": "Name",
+      "added": "Date added",
+      "pages": "Page count",
+      "size": "File size"
+    },
+    "layout": {
+      "single": "Single page",
+      "spread": "Two pages",
+      "webtoon": "Webtoon"
+    },
+    "direction": {
+      "rtl": "Right to left",
+      "ltr": "Left to right"
+    },
+    "fit": {
+      "page": "Whole page",
+      "width": "Fit width",
+      "height": "Fit height",
+      "original": "Actual size"
+    }
   }
 }
