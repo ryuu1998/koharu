@@ -19,7 +19,8 @@ use koharu_scene::{
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::{State, ipc::Channel};
+use tauri::{AppHandle, State, ipc::Channel};
+use tauri_runtime_cef::CefRuntime;
 
 use super::{
     Error,
@@ -144,10 +145,11 @@ impl Drop for BatchGuard<'_> {
 pub(crate) async fn process_batch(
     request: BatchRequest,
     on_event: Channel<BatchEvent>,
-    pipeline: State<'_, Pipeline>,
+    handle: AppHandle<CefRuntime>,
     batch: State<'_, BatchState>,
     processing: State<'_, Processing>,
 ) -> std::result::Result<BatchReport, Error> {
+    let pipeline = crate::app::inference(&handle)?;
     let stop = RunControl::default();
     let sink: EventSink = Arc::new(move |event| {
         let _ = on_event.send(event);
@@ -168,7 +170,7 @@ pub(crate) async fn process_batch(
         processing: &processing,
         job,
     };
-    Ok(run_chapters(request, pipeline.inner().clone(), run).await?)
+    Ok(run_chapters(request, pipeline, run).await?)
 }
 
 fn current(batch: &BatchState, id: &str) -> Result<Arc<BatchRun>> {

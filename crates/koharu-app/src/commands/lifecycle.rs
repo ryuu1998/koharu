@@ -41,34 +41,6 @@ pub enum PageImportSource {
     Paths { paths: Vec<std::path::PathBuf> },
 }
 
-pub(crate) struct Initialization {
-    ready: tokio::sync::watch::Sender<bool>,
-}
-
-impl Default for Initialization {
-    fn default() -> Self {
-        let (ready, _) = tokio::sync::watch::channel(false);
-        Self { ready }
-    }
-}
-
-impl Initialization {
-    pub(crate) fn ready(&self) {
-        self.ready.send_replace(true);
-    }
-
-    async fn wait(&self) -> Result<()> {
-        let mut ready = self.ready.subscribe();
-        while !*ready.borrow_and_update() {
-            ready
-                .changed()
-                .await
-                .context("startup state closed before initialization completed")?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct Download {
     #[specta(type = f64)]
@@ -157,8 +129,6 @@ pub(crate) async fn subscribe(
     on_resources: Channel<ModelResources>,
     on_project: Channel<Option<ProjectInfo>>,
 ) -> std::result::Result<StartupState, Error> {
-    handle.state::<Initialization>().wait().await?;
-
     *handle.state::<CanvasChannel>().channel.lock() = Some(on_canvas);
     *handle.state::<JobChannel>().channel.lock() = Some(on_job);
     *handle.state::<DownloadChannel>().channel.lock() = Some(on_download);
