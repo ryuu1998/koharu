@@ -133,17 +133,18 @@ pub(crate) async fn export(
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
     if matches!(format, ProjectExportFormat::Cbz) {
-        cbz::export(
-            snapshot,
+        let ready = stream::iter(pages.into_iter().map(|page| Ok((page, snapshot.clone()))));
+        let prepared = cbz::prepare(
+            snapshot.clone(),
+            ready,
             renderer,
             rasterizer,
-            destination,
             cbz::DEFAULT_QUALITY,
-            None,
-            true,
+            koharu_pipeline::RunControl::default(),
             None,
         )
         .await?;
+        prepared.write(destination, None, true).await?;
         return Ok(());
     }
     let width = pages.len().to_string().len().max(4);

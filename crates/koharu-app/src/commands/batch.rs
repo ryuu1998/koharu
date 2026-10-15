@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{Context as _, Result, ensure};
 use async_trait::async_trait;
+use futures::stream;
 use koharu_desktop::Desktop;
 use koharu_pipeline::{
     Committer, Operation, Pipeline, Progress, Request, RunControl, RunStatus, Scope, Stage,
@@ -453,6 +454,7 @@ async fn process_chapter(
     let progress_state = Arc::clone(&progress);
     let progress_events = Arc::clone(&events);
     let progress_path = chapter.to_owned();
+    let (ready_pages, ready_receiver) = tokio::sync::mpsc::unbounded_channel();
     let callback = Arc::new(move |event| {
         let stage = match &event {
             Progress::Started { .. } => return,
@@ -462,7 +464,7 @@ async fn process_chapter(
             | Progress::Skipped { stage, .. } => *stage,
         };
         let mut current = progress_state.lock();
-        current.record(event);
+        let ready = current.record(event);
         progress_events(BatchEvent::ChapterProgress {
             path: progress_path.clone(),
             completed_pages: current.completed(stage),
@@ -472,12 +474,16 @@ async fn process_chapter(
             total_steps: count * Stage::ALL.len(),
             stage,
         });
+        if let Some(page) = ready {
+            let _ = ready_pages.send(page);
+        }
     });
-    // One execution preserves the bounded page window and decoded images across stages.
+    // The pipeline commits each page before its readiness notification. Only
+    // page IDs wait in this queue; rendered JPEGs are staged on disk.
     let snapshot = session.lock().await.snapshot();
     let mut committer = SessionCommitter(Arc::clone(&session));
     let processing = pipeline.execute(
-        snapshot,
+        snapshot.clone(),
         Request {
             operation: Operation::Full,
             scope: Scope::Project,
@@ -487,19 +493,46 @@ async fn process_chapter(
         },
         &mut committer,
     );
-    let preparation = desktop.rasterizer();
-    tokio::pin!(processing, preparation);
-    // Renderer setup can overlap processing, but a renderer failure must not drop
-    // in-flight model jobs before the pipeline has drained them.
-    let (report, prepared) = tokio::select! {
-        report = &mut processing => (report?, None),
-        prepared = &mut preparation => (processing.await?, Some(prepared)),
+    let render_session = session.clone();
+    let ready = stream::unfold(ready_receiver, move |mut receiver| {
+        let session = render_session.clone();
+        async move {
+            let page = receiver.recv().await?;
+            let snapshot = session.lock().await.snapshot();
+            Some((Ok((page, snapshot)), receiver))
+        }
+    });
+    let render_events = events.clone();
+    let render_path = chapter.to_owned();
+    let rendering = async {
+        let rasterizer = desktop.rasterizer().await?;
+        cbz::prepare(
+            snapshot,
+            ready,
+            desktop.renderer(),
+            rasterizer,
+            quality,
+            stop.clone(),
+            Some(Arc::new(move |completed_pages| {
+                render_events(BatchEvent::ChapterRendered {
+                    path: render_path.clone(),
+                    completed_pages,
+                    total_pages: count,
+                });
+            })),
+        )
+        .await
     };
+    // Neither a rendering error nor a pipeline error may drop native work that
+    // was already admitted. Publication waits for both sides to finish.
+    let (report, prepared) = tokio::join!(processing, rendering);
+    let report = report?;
     ensure!(
         report.status == RunStatus::Completed && !stop.stopped(),
         "batch stopped"
     );
     let processing_elapsed = processing_started.elapsed();
+    let prepared = prepared?;
     let Some(_export_activity) = stop.admit().await else {
         anyhow::bail!("batch stopped");
     };
@@ -507,33 +540,11 @@ async fn process_chapter(
     events(BatchEvent::ChapterExporting {
         path: chapter.to_owned(),
     });
-    let rasterizer = match prepared {
-        Some(result) => result?,
-        None => preparation.await?,
-    };
     let path = chapter.to_owned();
     let metadata = tokio_rayon::spawn(move || batch_source::comic_info(&path)).await?;
-    let snapshot = session.lock().await.snapshot();
-    let render_path = chapter.to_owned();
-    cbz::export(
-        snapshot,
-        desktop.renderer(),
-        rasterizer,
-        output,
-        quality,
-        metadata,
-        overwrite,
-        Some(Arc::new(move |completed_pages| {
-            events(BatchEvent::ChapterRendered {
-                path: render_path.clone(),
-                completed_pages,
-                total_pages: count,
-            });
-        })),
-    )
-    .await?;
+    prepared.write(output, metadata, overwrite).await?;
     tracing::info!(chapter = %chapter.display(), import_secs = import_elapsed.as_secs_f64(),
-        pipeline_secs = processing_elapsed.as_secs_f64(), export_secs = export_started.elapsed().as_secs_f64(),
+        processing_secs = processing_elapsed.as_secs_f64(), export_secs = export_started.elapsed().as_secs_f64(),
         total_secs = started.elapsed().as_secs_f64(), "batch chapter completed");
     Ok(())
 }
@@ -544,18 +555,23 @@ struct ChapterProgress {
     active: BTreeSet<(EntityId, Stage)>,
 }
 impl ChapterProgress {
-    fn record(&mut self, progress: Progress) {
+    fn record(&mut self, progress: Progress) -> Option<EntityId> {
         match progress {
             Progress::Loading { page, stage, .. } | Progress::Running { page, stage, .. } => {
                 if !self.finished.contains(&(page, stage)) {
                     self.active.insert((page, stage));
                 }
+                None
             }
             Progress::Finished { page, stage, .. } | Progress::Skipped { page, stage } => {
                 self.active.remove(&(page, stage));
-                self.finished.insert((page, stage));
+                (self.finished.insert((page, stage))
+                    && Stage::ALL
+                        .iter()
+                        .all(|stage| self.finished.contains(&(page, *stage))))
+                .then_some(page)
             }
-            Progress::Started { .. } => {}
+            Progress::Started { .. } => None,
         }
     }
 
@@ -577,6 +593,40 @@ impl ChapterProgress {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_page_becomes_renderable_once_after_its_own_stages_finish() {
+        let first = EntityId::new();
+        let second = EntityId::new();
+        let mut progress = ChapterProgress::default();
+        for page in [first, second] {
+            for stage in [Stage::Detection, Stage::Ocr, Stage::Inpainting] {
+                assert!(progress.record(Progress::Skipped { page, stage }).is_none());
+            }
+        }
+        assert_eq!(
+            progress.record(Progress::Skipped {
+                page: second,
+                stage: Stage::Translation,
+            }),
+            Some(second)
+        );
+        assert!(
+            progress
+                .record(Progress::Skipped {
+                    page: second,
+                    stage: Stage::Translation,
+                })
+                .is_none()
+        );
+        assert_eq!(
+            progress.record(Progress::Skipped {
+                page: first,
+                stage: Stage::Translation,
+            }),
+            Some(first)
+        );
+    }
 
     #[test]
     fn progress_stays_monotonic_across_phase_changes_and_duplicate_events() {
