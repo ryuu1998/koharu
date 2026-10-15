@@ -33,6 +33,7 @@ pub(super) async fn translate(
             .post(RESPONSES_URL)
             .bearer_auth(api_key.expose_secret())
             .json(&request_body(model, generation, request)?),
+        super::openai::disposition,
     )
     .await?;
     let text = response
@@ -55,6 +56,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let response: ModelsResponse = send_json(
         "grok",
         client.get(MODELS_URL).bearer_auth(api_key.expose_secret()),
+        super::openai::disposition,
     )
     .await?;
     Ok(response

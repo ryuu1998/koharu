@@ -21,12 +21,14 @@ pub use language::Language;
 pub use model::{GenerationConfig, Model, ModelSelection, Quantization};
 pub(crate) use model::{ModelGeneration, QuantizationDefinition, display_name};
 pub use provider::{Provider, ProviderConfig, ProvidersConfig};
+pub use remote::RemoteConfig;
 
 #[derive(Clone)]
 pub struct Translator {
     providers: koharu_config::Config<ProvidersConfig>,
     local: Arc<tokio::sync::Mutex<Option<LoadedLocal>>>,
     client: reqwest::Client,
+    remote: Arc<remote::Scheduler>,
     device: Device,
 }
 
@@ -51,6 +53,7 @@ impl Translator {
             providers,
             local: Arc::new(tokio::sync::Mutex::new(None)),
             client: koharu_runtime::http_client()?,
+            remote: Arc::default(),
             device,
         })
     }
@@ -101,6 +104,8 @@ impl Translator {
         selection: &ModelSelection,
         generation: GenerationConfig,
         mut request: TranslationRequest,
+        control: &koharu_runtime::RunControl,
+        remote: &RemoteConfig,
     ) -> anyhow::Result<(&'static str, Vec<String>)> {
         let provider = selection.provider;
         let provider_id: &'static str = provider.into();
@@ -124,7 +129,13 @@ impl Translator {
                 .await?
         } else {
             let providers = self.providers.read()?.clone();
-            remote::translate(&self.client, &providers, selection, &generation, &request).await?
+            let context = self.remote.context(provider_id, remote, control);
+            remote::transport::CONTEXT
+                .scope(
+                    context,
+                    remote::translate(&self.client, &providers, selection, &generation, &request),
+                )
+                .await?
         };
         if translated.len() != expected {
             return Err(Error::SegmentCount {

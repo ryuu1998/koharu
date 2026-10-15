@@ -80,6 +80,7 @@ pub(super) async fn translate(
             .post(CHAT_URL)
             .bearer_auth(api_key.expose_secret())
             .json(&body),
+        super::openai::disposition,
     )
     .await?;
     let text = response
@@ -104,6 +105,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let discovered: Result<ModelsResponse> = super::send_json(
         "openrouter",
         client.get(MODELS_URL).bearer_auth(api_key.expose_secret()),
+        super::openai::disposition,
     )
     .await;
     Ok(match discovered {

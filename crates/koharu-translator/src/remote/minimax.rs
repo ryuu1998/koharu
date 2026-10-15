@@ -24,6 +24,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let response: ModelsResponse = send_json(
         "minimax",
         client.get(MODELS_URL).bearer_auth(api_key.expose_secret()),
+        disposition,
     )
     .await?;
     Ok(response
@@ -71,6 +72,7 @@ pub(super) async fn translate(
                 max_completion_tokens: generation.max_tokens,
                 response_format: response_format(model, request.segments.len()),
             }),
+        disposition,
     )
     .await?;
     if response.base_resp.status_code != 0 {
@@ -171,6 +173,23 @@ struct BaseResponse {
     status_msg: String,
 }
 
+// MiniMax's native API can report throttling in a successful HTTP response.
+pub(super) fn disposition(
+    status: reqwest::StatusCode,
+    body: &serde_json::Value,
+) -> super::Disposition {
+    match body
+        .pointer("/base_resp/status_code")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0)
+    {
+        0 => super::http_disposition(status, body),
+        1000 | 1001 | 1002 | 1024 | 1033 | 1039 | 1041 | 2045 => super::Disposition::Retry(None),
+        1008 | 2056 => super::Disposition::Quota,
+        _ => super::Disposition::Permanent,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,5 +261,34 @@ mod tests {
         assert!(response.choices.is_empty());
         assert_eq!(response.base_resp.status_code, 1008);
         assert_eq!(response.base_resp.status_msg, "insufficient balance");
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    #[test]
+    fn classifies_provider_errors() {
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::OK,
+                &serde_json::json!({"base_resp":{"status_code":1002}})
+            ),
+            super::super::Disposition::Retry(None)
+        );
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::OK,
+                &serde_json::json!({"base_resp":{"status_code":1008}})
+            ),
+            super::super::Disposition::Quota
+        );
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::OK,
+                &serde_json::json!({"base_resp":{"status_code":1004}})
+            ),
+            super::super::Disposition::Permanent
+        );
     }
 }

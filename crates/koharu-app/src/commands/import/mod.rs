@@ -71,7 +71,36 @@ fn decode(path: &Path, source: EncodedPage) -> Result<Page> {
     })
 }
 
-pub(super) fn import(mut paths: Vec<PathBuf>) -> Result<Vec<Page>> {
+pub(super) fn import(paths: Vec<PathBuf>) -> Result<Vec<Page>> {
+    let mut paths = paths
+        .into_iter()
+        .flat_map(|path| {
+            if path.is_dir() {
+                walkdir::WalkDir::new(path)
+                    .follow_links(false)
+                    .into_iter()
+                    .filter_map(|entry| match entry {
+                        Ok(entry) if entry.file_type().is_file() => Some(entry.into_path()),
+                        Ok(_) => None,
+                        Err(error) => {
+                            tracing::warn!(%error, "could not inspect an import directory entry");
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                vec![path]
+            }
+        })
+        .filter(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.parse::<Format>().is_ok())
+        })
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        bail!("no supported images, archives, or PDF files were found");
+    }
     alphanumeric_sort::sort_slice_by_os_str_key(&mut paths, |path| {
         path.file_name().unwrap_or_else(|| path.as_os_str())
     });
@@ -113,6 +142,24 @@ pub(super) fn import(mut paths: Vec<PathBuf>) -> Result<Vec<Page>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expands_dropped_folders_and_skips_unrelated_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let nested = directory.path().join("chapter");
+        fs::create_dir(&nested).unwrap();
+        let mut bytes = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image::RgbaImage::new(2, 3))
+            .write_to(&mut bytes, ImageFormat::Png)
+            .unwrap();
+        fs::write(nested.join("page.png"), bytes.into_inner()).unwrap();
+        fs::write(nested.join("notes.txt"), b"not a page").unwrap();
+
+        let pages = import(vec![directory.path().to_owned()]).unwrap();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].name, "page.png");
+        assert_eq!((pages[0].width, pages[0].height), (2, 3));
+    }
 
     #[test]
     fn top_level_paths_are_naturally_sorted() {

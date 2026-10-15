@@ -261,7 +261,9 @@
     "selectAllLayers": "Выбрать все слои",
     "settings": "Настройки",
     "undo": "Отменить",
-    "view": "Вид"
+    "view": "Вид",
+    "exportCurrentPage": "Current page",
+    "exportProjectFormat": "Entire project as {{format}}"
   },
   "model": {
     "baseUrl": "Базовый URL",
@@ -298,7 +300,10 @@
     "rename": "Переименовать",
     "renameDescription": "Выберите новое имя для страницы.",
     "renameTitle": "Переименовать страницу",
-    "selected": "Выбрано: {{count}}"
+    "selected": "Выбрано: {{count}}",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "Инструкции по переводу",
@@ -447,7 +452,10 @@
       "targetLanguageDescription": "Выберите язык, на который нужно перевести текст.",
       "title": "Перевод",
       "translationModel": "Модель перевода",
-      "translationModelDescription": "Выберите модель для перевода текста."
+      "translationModelDescription": "Выберите модель для перевода текста.",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "Добавить семейство шрифтов",
@@ -532,5 +540,112 @@
     "maximize": "Развернуть",
     "minimize": "Свернуть",
     "restore": "Восстановить"
+  },
+  "batch": {
+    "tab": "Batch",
+    "title": "Batch translation",
+    "folders": "Batch folders",
+    "source": "Import folder",
+    "output": "Output folder",
+    "chooseSource": "Choose source folder",
+    "chooseOutput": "Choose export folder",
+    "choose": "Choose",
+    "chapters": "Chapters",
+    "selected": "{{count}} selected of {{total}}",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "emptyTitle": "Choose your chapters",
+    "emptyHint": "Select a folder containing CBZ chapters to see their covers and choose what to translate.",
+    "emptyFolder": "No CBZ chapters found",
+    "emptyFolderHint": "Choose another folder. Only CBZ files in this folder are included.",
+    "ready": "Ready",
+    "pages": "{{count}} pages",
+    "translate": "Translate {{count}} chapters",
+    "retranslate_one": "Перевести заново: {{count}} глава",
+    "retranslate_other": "Перевести заново: {{count}} глав",
+    "replacing_one": "Будет заменён {{count}} готовый файл",
+    "replacing_other": "Будет заменено {{count}} готовых файлов",
+    "retranslateQueued": "В очереди на повторный перевод",
+    "translate_one": "Translate {{count}} chapter",
+    "translate_other": "Translate {{count}} chapters",
+    "progress": "Batch progress",
+    "chapterProgress": "Chapter progress",
+    "pageProgress": "{{count}} / {{total}} pages",
+    "chapterCount": "{{count}} / {{total}} chapters",
+    "starting": "Starting batch",
+    "stopping": "Stopping…",
+    "stopped": "Stopped.",
+    "running": "Translating",
+    "exporting": "Exporting",
+    "rendering": "Рендеринг",
+    "activePages": "В работе: {{count}}",
+    "translated": "Translated",
+    "skipped": "Skipped existing output",
+    "failed": "Failed",
+    "retry": "Повторить",
+    "retryChapter": "Повторить {{chapter}}",
+    "showError": "Показать ошибку: {{chapter}}",
+    "chapterFailed": "Ошибка главы",
+    "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed.",
+    "alreadyTranslated": "Already translated",
+    "toolbar": "Batch toolbar",
+    "cards": "Cards",
+    "cardSize": "Card size",
+    "unknownDate": "Unknown date",
+    "queue": "Queue",
+    "queueChapters": "Selected chapter queue",
+    "showQueue": "Expand queue",
+    "hideQueue": "Collapse queue",
+    "followActive": "Return to active",
+    "upNext": "Up next",
+    "waiting": "In queue",
+    "sort": {
+      "label": "Sort chapters",
+      "choose": "Choose sorting",
+      "reverse": "{{direction}}. Reverse order",
+      "addedHint": "File creation time. Unavailable dates appear last.",
+      "status": {
+        "label": "Статус перевода",
+        "ascending": "Сначала переводимые",
+        "descending": "Сначала переведённые"
+      },
+      "added": {
+        "label": "Time added",
+        "ascending": "Oldest first",
+        "descending": "Newest first"
+      },
+      "size": {
+        "label": "File size",
+        "ascending": "Smallest first",
+        "descending": "Largest first"
+      },
+      "pages": {
+        "label": "Page count",
+        "ascending": "Fewest pages first",
+        "descending": "Most pages first"
+      }
+    },
+    "layout": {
+      "caption": "Show titles below covers",
+      "overlay": "Show titles on covers"
+    },
+    "pause": "Pause",
+    "pausing": "Pausing…",
+    "paused": "Paused",
+    "resume": "Resume",
+    "stageProgress": "Chapter stages",
+    "removeFromQueue": "Убрать {{chapter}} из очереди",
+    "dragToReorder": "Drag to reorder",
+    "addArchives": "Add archives",
+    "useCurrentOutput": "Current output folder",
+    "useImportOutput": "This import’s output folder",
+    "otherOutput": "Choose another folder",
+    "adding": "Adding…",
+    "addCount": "Add {{count}} chapters",
+    "addRemaining": "Add remaining",
+    "noNewArchives": "These archives are already in your library.",
+    "noReadableArchives": "No readable CBZ archives in this folder.",
+    "addCount_one": "Add {{count}} chapter",
+    "addCount_other": "Add {{count}} chapters"
   }
 }

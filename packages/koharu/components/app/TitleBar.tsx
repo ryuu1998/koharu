@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { AboutDialog } from '@/components/app/AboutDialog'
 import { useMacOS, WindowControls } from '@/components/app/WindowChrome'
 import { call } from '@/lib/backend'
+import { useBatchStore } from '@/lib/batch'
 import { selectableLayer } from '@/lib/geometry'
 import {
   pageKey,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/queries'
 import { useKoharuStore } from '@/lib/store'
 import { commands, type Operation, type Scope, type Stage } from '@koharu/bridge/protocol'
+import { Button } from '@koharu/ui/components/button'
 import {
   Menubar,
   MenubarContent as UiMenubarContent,
@@ -49,7 +51,9 @@ export function TitleBar() {
   const selectedPages = useKoharuStore((state) => state.selectedPages)
   const selectedLayers = useKoharuStore((state) => state.selectedLayers)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
-  const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const setWorkspace = useKoharuStore((state) => state.setWorkspace)
+  const workspace = useKoharuStore((state) => state.workspace)
+  const batchRunning = useBatchStore((state) => state.running)
   const requestCanvasFit = useKoharuStore((state) => state.requestCanvasFit)
   const { importPages, importing } = useImportPages()
   const { run: exportProject, busy: exporting } = useCommand(
@@ -98,11 +102,11 @@ export function TitleBar() {
                   {importing ? t('navigator.importing') : t('menu.import')}
                 </MenubarSubTrigger>
                 <MenubarSubContent className='min-w-40 p-1'>
-                  <MenubarItem disabled={importing} onClick={() => importPages('files')}>
+                  <MenubarItem disabled={importing} onClick={() => importPages({ kind: 'files' })}>
                     <FilePlus2 />
                     {t('navigator.importFiles')}
                   </MenubarItem>
-                  <MenubarItem disabled={importing} onClick={() => importPages('folder')}>
+                  <MenubarItem disabled={importing} onClick={() => importPages({ kind: 'folder' })}>
                     <FolderOpen />
                     {t('navigator.importFolder')}
                   </MenubarItem>
@@ -118,13 +122,30 @@ export function TitleBar() {
                   {t('menu.export')}
                 </MenubarSubTrigger>
                 <MenubarSubContent className='min-w-40 p-1'>
+                  <div role='group' aria-label={t('menu.exportCurrentPage')}>
+                    <div className='px-2 py-1 text-[10px] text-muted-foreground'>
+                      {t('menu.exportCurrentPage')}
+                    </div>
+                    {(['png', 'psd'] as const).map((format) => (
+                      <MenubarItem
+                        key={format}
+                        disabled={!page || exporting}
+                        onClick={() =>
+                          page && exportProject({ kind: 'current_page', page: page.id, format })
+                        }
+                      >
+                        {format.toUpperCase()}…
+                      </MenubarItem>
+                    ))}
+                  </div>
+                  <MenubarSeparator />
                   {(['png', 'psd', 'cbz'] as const).map((format) => (
                     <MenubarItem
                       key={format}
                       disabled={exporting}
-                      onClick={() => exportProject(format)}
+                      onClick={() => exportProject({ kind: 'entire_project', format })}
                     >
-                      {format.toUpperCase()}…
+                      {t('menu.exportProjectFormat', { format: format.toUpperCase() })}…
                     </MenubarItem>
                   ))}
                 </MenubarSubContent>
@@ -134,7 +155,7 @@ export function TitleBar() {
                 {t('menu.closeProject')}
               </MenubarItem>
               <MenubarSeparator />
-              <MenubarItem onClick={() => setSettingsOpen(true)}>
+              <MenubarItem disabled={batchRunning} onClick={() => setWorkspace('settings')}>
                 <Settings />
                 {t('menu.settings')}
               </MenubarItem>
@@ -262,6 +283,17 @@ export function TitleBar() {
           </MenubarMenu>
         </Menubar>
 
+        <Button
+          type='button'
+          variant='ghost'
+          size='sm'
+          aria-pressed={workspace === 'batch'}
+          disabled={workspace === 'settings'}
+          className='relative z-10 ml-1 h-6 px-2 text-[11px] text-muted-foreground hover:bg-primary/10 aria-pressed:bg-primary/10 aria-pressed:text-foreground'
+          onClick={() => setWorkspace(workspace === 'batch' ? 'project' : 'batch')}
+        >
+          {t('batch.tab')}
+        </Button>
         <div className='min-w-0 flex-1' />
         <div className='pointer-events-none absolute inset-y-0 left-1/2 flex max-w-[40vw] min-w-16 -translate-x-1/2 items-center justify-center px-3 text-[11px] text-muted-foreground select-none'>
           {project ? (

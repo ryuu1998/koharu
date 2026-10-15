@@ -36,6 +36,20 @@ pub struct BaberuOcr {
 }
 
 impl BaberuOcr {
+    /// Resolves checkpoint files without allocating model weights on the device.
+    pub async fn prefetch() -> Result<()> {
+        tokio::try_join!(
+            CONFIG.resolve(),
+            GENERATION_CONFIG.resolve(),
+            WEIGHTS.resolve(),
+            VOCABULARY.resolve(),
+            VISION_CONFIG.resolve(),
+            VISION_PROCESSOR.resolve()
+        )
+        .context("failed to prepare Baberu OCR files")?;
+        Ok(())
+    }
+
     pub async fn load(device: crate::Device) -> Result<Self> {
         let device: Device = device.try_into_device()?;
         let (

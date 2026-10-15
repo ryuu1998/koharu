@@ -72,6 +72,12 @@ impl Pipeline {
         self.resources.subscribe()
     }
 
+    /// Release resident model weights after admitted execution has drained.
+    pub async fn unload(&self) {
+        let _execution = self.execution.lock().await;
+        self.current.load().unload();
+    }
+
     #[tracing::instrument(skip_all)]
     pub async fn execute(
         &self,

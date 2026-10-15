@@ -21,6 +21,7 @@ base64 = { workspace = true }
 clap = { workspace = true }
 fast_image_resize = { workspace = true }
 futures = { workspace = true }
+httpdate = { workspace = true }
 image = { workspace = true }
 indoc = { workspace = true }
 reqwest = { workspace = true }

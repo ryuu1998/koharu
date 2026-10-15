@@ -57,8 +57,8 @@ type Tab = (typeof tabs)[number][0]
 
 export function SettingsPage() {
   const { t } = useTranslation()
-  const open = useKoharuStore((state) => state.settingsOpen)
-  const setOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const open = useKoharuStore((state) => state.workspace === 'settings')
+  const closeSettings = useKoharuStore((state) => state.closeSettings)
   const preferences = useKoharuStore((state) => state.preferences)
   const translationModels = useKoharuStore((state) => state.translationModels)
   const [tab, setTab] = useState<Tab>('appearance')
@@ -162,11 +162,11 @@ export function SettingsPage() {
           className='mb-5 h-9 justify-start gap-2 rounded-lg px-2 text-[12px] text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground'
           onClick={() => {
             if (!pipeline || !providers || !typesetting) {
-              setOpen(false)
+              closeSettings()
               return
             }
             void saveDraft(pipeline, providers, typesetting)
-              .then(() => setOpen(false))
+              .then(() => closeSettings())
               .catch(() => undefined)
           }}
         >

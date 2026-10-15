@@ -261,7 +261,9 @@
     "selectAllLayers": "Selecionar todas as camadas",
     "settings": "Configurações",
     "undo": "Desfazer",
-    "view": "Exibir"
+    "view": "Exibir",
+    "exportCurrentPage": "Current page",
+    "exportProjectFormat": "Entire project as {{format}}"
   },
   "model": {
     "baseUrl": "URL base",
@@ -298,7 +300,10 @@
     "rename": "Renomear",
     "renameDescription": "Escolha um novo nome para esta página.",
     "renameTitle": "Renomear página",
-    "selected": "{{count}} selecionadas"
+    "selected": "{{count}} selecionadas",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "Instruções de tradução",
@@ -447,7 +452,10 @@
       "targetLanguageDescription": "Escolha o idioma para o qual o texto será traduzido.",
       "title": "Tradução",
       "translationModel": "Modelo de tradução",
-      "translationModelDescription": "Escolha o modelo usado para traduzir texto."
+      "translationModelDescription": "Escolha o modelo usado para traduzir texto.",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "Adicionar família de fontes",
@@ -532,5 +540,112 @@
     "maximize": "Maximizar",
     "minimize": "Minimizar",
     "restore": "Restaurar"
+  },
+  "batch": {
+    "tab": "Batch",
+    "title": "Batch translation",
+    "folders": "Batch folders",
+    "source": "Import folder",
+    "output": "Output folder",
+    "chooseSource": "Choose source folder",
+    "chooseOutput": "Choose export folder",
+    "choose": "Choose",
+    "chapters": "Chapters",
+    "selected": "{{count}} selected of {{total}}",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "emptyTitle": "Choose your chapters",
+    "emptyHint": "Select a folder containing CBZ chapters to see their covers and choose what to translate.",
+    "emptyFolder": "No CBZ chapters found",
+    "emptyFolderHint": "Choose another folder. Only CBZ files in this folder are included.",
+    "ready": "Ready",
+    "pages": "{{count}} pages",
+    "translate": "Translate {{count}} chapters",
+    "retranslate_one": "Retraduzir {{count}} capítulo",
+    "retranslate_other": "Retraduzir {{count}} capítulos",
+    "replacing_one": "{{count}} arquivo existente será substituído",
+    "replacing_other": "{{count}} arquivos existentes serão substituídos",
+    "retranslateQueued": "Na fila para retraduzir",
+    "translate_one": "Translate {{count}} chapter",
+    "translate_other": "Translate {{count}} chapters",
+    "progress": "Batch progress",
+    "chapterProgress": "Chapter progress",
+    "pageProgress": "{{count}} / {{total}} pages",
+    "chapterCount": "{{count}} / {{total}} chapters",
+    "starting": "Starting batch",
+    "stopping": "Stopping…",
+    "stopped": "Stopped.",
+    "running": "Translating",
+    "exporting": "Exporting",
+    "rendering": "Renderização",
+    "activePages": "Em andamento: {{count}}",
+    "translated": "Translated",
+    "skipped": "Skipped existing output",
+    "failed": "Failed",
+    "retry": "Tentar novamente",
+    "retryChapter": "Tentar {{chapter}} novamente",
+    "showError": "Mostrar erro de {{chapter}}",
+    "chapterFailed": "Falha no capítulo",
+    "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed.",
+    "alreadyTranslated": "Already translated",
+    "toolbar": "Batch toolbar",
+    "cards": "Cards",
+    "cardSize": "Card size",
+    "unknownDate": "Unknown date",
+    "queue": "Queue",
+    "queueChapters": "Selected chapter queue",
+    "showQueue": "Expand queue",
+    "hideQueue": "Collapse queue",
+    "followActive": "Return to active",
+    "upNext": "Up next",
+    "waiting": "In queue",
+    "sort": {
+      "label": "Sort chapters",
+      "choose": "Choose sorting",
+      "reverse": "{{direction}}. Reverse order",
+      "addedHint": "File creation time. Unavailable dates appear last.",
+      "status": {
+        "label": "Status da tradução",
+        "ascending": "Em tradução primeiro",
+        "descending": "Traduzidos primeiro"
+      },
+      "added": {
+        "label": "Time added",
+        "ascending": "Oldest first",
+        "descending": "Newest first"
+      },
+      "size": {
+        "label": "File size",
+        "ascending": "Smallest first",
+        "descending": "Largest first"
+      },
+      "pages": {
+        "label": "Page count",
+        "ascending": "Fewest pages first",
+        "descending": "Most pages first"
+      }
+    },
+    "layout": {
+      "caption": "Show titles below covers",
+      "overlay": "Show titles on covers"
+    },
+    "pause": "Pause",
+    "pausing": "Pausing…",
+    "paused": "Paused",
+    "resume": "Resume",
+    "stageProgress": "Chapter stages",
+    "removeFromQueue": "Remover {{chapter}} da fila",
+    "dragToReorder": "Drag to reorder",
+    "addArchives": "Add archives",
+    "useCurrentOutput": "Current output folder",
+    "useImportOutput": "This import’s output folder",
+    "otherOutput": "Choose another folder",
+    "adding": "Adding…",
+    "addCount": "Add {{count}} chapters",
+    "addRemaining": "Add remaining",
+    "noNewArchives": "These archives are already in your library.",
+    "noReadableArchives": "No readable CBZ archives in this folder.",
+    "addCount_one": "Add {{count}} chapter",
+    "addCount_other": "Add {{count}} chapters"
   }
 }

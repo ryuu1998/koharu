@@ -21,6 +21,13 @@ pub struct PaddleOCRVLQuantized {
 }
 
 impl PaddleOCRVLQuantized {
+    /// Resolves checkpoint files without allocating model weights on the device.
+    pub async fn prefetch() -> Result<()> {
+        tokio::try_join!(MODEL.resolve(), PROJECTOR.resolve())
+            .context("failed to prepare quantized PaddleOCR-VL-1.6 files")?;
+        Ok(())
+    }
+
     pub async fn load(device: Device) -> Result<Self> {
         let (model_path, projector_path) =
             tokio::try_join!(MODEL.resolve(), PROJECTOR.resolve())

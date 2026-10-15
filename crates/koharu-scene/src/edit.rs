@@ -768,13 +768,11 @@ impl Edit {
         self.validate_removal_authorship::<T>(owner)?;
         let mut value = value.clone();
         match &self.generation {
-            Some(generation) => {
-                if !value.set_origin(Origin::Generated(generation.clone())) {
-                    return Err(Error::Authorship(format!(
-                        "pipeline cannot write unmanaged component {}",
-                        T::KIND
-                    )));
-                }
+            Some(generation) if !value.set_origin(Origin::Generated(generation.clone())) => {
+                return Err(Error::Authorship(format!(
+                    "pipeline cannot write unmanaged component {}",
+                    T::KIND
+                )));
             }
             None if value.origin().is_some() && !value.set_origin(Origin::User) => {
                 return Err(Error::Authorship(format!(
@@ -782,7 +780,7 @@ impl Edit {
                     T::KIND
                 )));
             }
-            None => {}
+            _ => {}
         }
         Ok(value)
     }

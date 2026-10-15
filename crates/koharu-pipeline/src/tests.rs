@@ -9,7 +9,7 @@ fn configuration_ignores_unknown_fields() {
 #[tokio::test]
 async fn stop_is_a_successful_partial_result() {
     let pipeline = pipeline(Default::default());
-    let stop = StopToken::default();
+    let stop = RunControl::default();
     stop.stop();
     let request = Request {
         stop,
@@ -59,7 +59,7 @@ async fn stop_after_a_page_keeps_completed_progress() {
         })
         .unwrap();
     session.commit(patch).await.unwrap();
-    let stop = StopToken::default();
+    let stop = RunControl::default();
     let progress_stop = stop.clone();
     let request = Request {
         operation: Operation::Only {
