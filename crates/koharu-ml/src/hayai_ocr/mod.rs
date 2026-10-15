@@ -34,6 +34,13 @@ pub struct HayaiOcr {
 }
 
 impl HayaiOcr {
+    /// Resolves checkpoint files without allocating model weights on the device.
+    pub async fn prefetch() -> Result<()> {
+        tokio::try_join!(CONFIG.resolve(), WEIGHTS.resolve(), TOKENIZER.resolve())
+            .context("failed to prepare Hayai OCR files")?;
+        Ok(())
+    }
+
     pub async fn load(device: crate::Device) -> Result<Self> {
         let device: Device = device.try_into_device()?;
         let (config_path, weights_path, tokenizer_path) = tokio::try_join!(

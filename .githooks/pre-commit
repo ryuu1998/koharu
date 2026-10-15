@@ -1,0 +1,13 @@
+#!/bin/sh
+
+branch=$(git symbolic-ref --quiet --short HEAD) || {
+  echo "Create a feature branch before committing from a detached HEAD." >&2
+  exit 1
+}
+
+case "$branch" in
+  main|v2/main|archive/*)
+    echo "Commit on a feature branch, then open a PR into v2/main." >&2
+    exit 1
+    ;;
+esac

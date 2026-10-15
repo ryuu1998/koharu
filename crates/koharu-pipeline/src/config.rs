@@ -173,6 +173,8 @@ impl Default for PipelineConfig {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct TranslationConfig {
+    #[serde(default)]
+    pub remote: koharu_translator::RemoteConfig,
     pub model: koharu_translator::ModelSelection,
     pub generation: GenerationConfig,
     #[specta(type = String)]
@@ -183,6 +185,7 @@ pub struct TranslationConfig {
 impl Default for TranslationConfig {
     fn default() -> Self {
         Self {
+            remote: koharu_translator::RemoteConfig::default(),
             model: koharu_translator::ModelSelection::default(),
             generation: GenerationConfig::default(),
             target_language: Language::English,

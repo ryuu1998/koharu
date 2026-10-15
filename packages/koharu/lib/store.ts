@@ -37,6 +37,7 @@ export type InspectorSection = 'copy' | 'type' | 'layers'
 export type ShortcutAction = CanvasTool | 'fit'
 export type Shortcuts = Record<ShortcutAction, string>
 export type PipelineScope = 'page' | 'selected-pages' | 'project'
+export type Workspace = 'project' | 'settings' | 'batch'
 export const pipelineStages: readonly Stage[] = ['detection', 'ocr', 'translation', 'inpainting']
 
 interface KoharuStore {
@@ -60,13 +61,15 @@ interface KoharuStore {
   inspector: InspectorSection
   processingScope: PipelineScope
   processingStages: Stage[]
-  settingsOpen: boolean
+  workspace: Workspace
+  returnWorkspace: 'project' | 'batch'
   shortcuts: Shortcuts
   selectPages: (pages: EntityId[]) => void
   showInspector: (section: InspectorSection) => void
   setProcessingScope: (scope: PipelineScope) => void
   setProcessingStages: (stages: Stage[]) => void
-  setSettingsOpen: (open: boolean) => void
+  setWorkspace: (workspace: Workspace) => void
+  closeSettings: () => void
   selectLayers: (layers: EntityId[]) => void
   setTool: (tool: CanvasTool) => void
   setBrush: (brush: CanvasBrush) => void
@@ -108,13 +111,22 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   inspector: 'copy',
   processingScope: 'selected-pages',
   processingStages: [...pipelineStages],
-  settingsOpen: false,
+  workspace: 'project',
   shortcuts: defaultShortcuts,
   selectPages: (selectedPages) => set({ selectedPages: [...new Set(selectedPages)] }),
   showInspector: (inspector) => set({ inspector }),
   setProcessingScope: (processingScope) => set({ processingScope }),
   setProcessingStages: (processingStages) => set({ processingStages }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  returnWorkspace: 'project',
+  setWorkspace: (workspace) =>
+    set((state) => ({
+      workspace,
+      returnWorkspace:
+        workspace === 'settings' && state.workspace !== 'settings'
+          ? state.workspace
+          : state.returnWorkspace,
+    })),
+  closeSettings: () => set((state) => ({ workspace: state.returnWorkspace })),
   selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
   setTool: (tool) => set({ tool }),
   setBrush: (brush) => set({ brush }),

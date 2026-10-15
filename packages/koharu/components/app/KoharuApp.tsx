@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { TitleBar } from '@/components/app/TitleBar'
+import { BatchPage } from '@/components/batch/BatchPage'
 import { Editor } from '@/components/editor/Editor'
 import { SettingsPage } from '@/components/preferences/SettingsPage'
 import { StartView } from '@/components/start/StartView'
@@ -18,9 +19,10 @@ export function KoharuApp() {
   const selectPages = useKoharuStore((state) => state.selectPages)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
   const projectLoaded = project !== undefined
-  const settingsOpen = useKoharuStore((state) => state.settingsOpen)
+  const settingsOpen = useKoharuStore((state) => state.workspace === 'settings')
+  const batchOpen = useKoharuStore((state) => state.workspace === 'batch')
   const activePage = project?.active_page
-  const editorOpen = project !== undefined && project !== null && !settingsOpen
+  const editorOpen = project !== undefined && project !== null && !settingsOpen && !batchOpen
 
   useEffect(() => {
     if (!projectLoaded || selectedPages.length > 0) return
@@ -38,6 +40,8 @@ export function KoharuApp() {
       <TitleBar />
       {settingsOpen ? (
         <SettingsPage />
+      ) : batchOpen ? (
+        <BatchPage />
       ) : project === undefined ? (
         <main className='grid min-h-0 flex-1 place-items-center bg-[var(--surface-canvas)]'>
           <div className='flex items-center gap-3 text-[12px] text-muted-foreground'>

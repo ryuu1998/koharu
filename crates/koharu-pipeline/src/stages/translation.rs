@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use koharu_scene::{Authored, LanguageTag, Origin, SourceText, Translation};
-use koharu_translator::{TranslationRequest, Translator};
+use koharu_translator::{Provider, TranslationRequest, Translator};
 
 use crate::TranslationConfig;
 
@@ -22,6 +22,18 @@ impl Processor {
 
 #[async_trait]
 impl StageProcessor for Processor {
+    fn parallelism(&self) -> usize {
+        if self.config.model.provider == Provider::Local {
+            1
+        } else {
+            self.config.remote.parallelism()
+        }
+    }
+
+    fn uses_accelerator(&self) -> bool {
+        self.config.model.provider == Provider::Local
+    }
+
     fn model(&self) -> &'static str {
         Translator::model(&self.config.model)
     }
@@ -64,7 +76,13 @@ impl StageProcessor for Processor {
         }
         let (provider, translated) = self
             .translator
-            .translate(&self.config.model, self.config.generation, request)
+            .translate(
+                &self.config.model,
+                self.config.generation,
+                request,
+                &input.control,
+                &self.config.remote,
+            )
             .await?;
         let language = LanguageTag::new(self.config.target_language.tag())?;
         let generated = generation(PRODUCER, provider)?;

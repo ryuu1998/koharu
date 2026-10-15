@@ -261,7 +261,9 @@
     "selectAllLayers": "すべてのレイヤーを選択",
     "settings": "設定",
     "undo": "元に戻す",
-    "view": "表示"
+    "view": "表示",
+    "exportCurrentPage": "Current page",
+    "exportProjectFormat": "Entire project as {{format}}"
   },
   "model": {
     "baseUrl": "ベース URL",
@@ -298,7 +300,10 @@
     "rename": "名前を変更",
     "renameDescription": "このページの新しい名前を入力します。",
     "renameTitle": "ページ名を変更",
-    "selected": "{{count}}件選択中"
+    "selected": "{{count}}件選択中",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "翻訳指示",
@@ -447,7 +452,10 @@
       "targetLanguageDescription": "テキストの翻訳先言語を選択します。",
       "title": "翻訳",
       "translationModel": "翻訳モデル",
-      "translationModelDescription": "テキストの翻訳に使用するモデルを選択します。"
+      "translationModelDescription": "テキストの翻訳に使用するモデルを選択します。",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "フォントファミリーを追加",
@@ -532,5 +540,112 @@
     "maximize": "最大化",
     "minimize": "最小化",
     "restore": "元のサイズに戻す"
+  },
+  "batch": {
+    "tab": "Batch",
+    "title": "Batch translation",
+    "folders": "Batch folders",
+    "source": "Import folder",
+    "output": "Output folder",
+    "chooseSource": "Choose source folder",
+    "chooseOutput": "Choose export folder",
+    "choose": "Choose",
+    "chapters": "Chapters",
+    "selected": "{{count}} selected of {{total}}",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "emptyTitle": "Choose your chapters",
+    "emptyHint": "Select a folder containing CBZ chapters to see their covers and choose what to translate.",
+    "emptyFolder": "No CBZ chapters found",
+    "emptyFolderHint": "Choose another folder. Only CBZ files in this folder are included.",
+    "ready": "Ready",
+    "pages": "{{count}} pages",
+    "translate": "Translate {{count}} chapters",
+    "retranslate_one": "{{count}}章を再翻訳",
+    "retranslate_other": "{{count}}章を再翻訳",
+    "replacing_one": "既存の出力{{count}}件を置き換えます",
+    "replacing_other": "既存の出力{{count}}件を置き換えます",
+    "retranslateQueued": "再翻訳の待機中",
+    "translate_one": "Translate {{count}} chapter",
+    "translate_other": "Translate {{count}} chapters",
+    "progress": "Batch progress",
+    "chapterProgress": "Chapter progress",
+    "pageProgress": "{{count}} / {{total}} pages",
+    "chapterCount": "{{count}} / {{total}} chapters",
+    "starting": "Starting batch",
+    "stopping": "Stopping…",
+    "stopped": "Stopped.",
+    "running": "Translating",
+    "exporting": "Exporting",
+    "rendering": "レンダリング",
+    "activePages": "処理中: {{count}}",
+    "translated": "Translated",
+    "skipped": "Skipped existing output",
+    "failed": "Failed",
+    "retry": "再試行",
+    "retryChapter": "{{chapter}} を再試行",
+    "showError": "{{chapter}} のエラーを表示",
+    "chapterFailed": "チャプターの処理に失敗しました",
+    "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed.",
+    "alreadyTranslated": "Already translated",
+    "toolbar": "Batch toolbar",
+    "cards": "Cards",
+    "cardSize": "Card size",
+    "unknownDate": "Unknown date",
+    "queue": "Queue",
+    "queueChapters": "Selected chapter queue",
+    "showQueue": "Expand queue",
+    "hideQueue": "Collapse queue",
+    "followActive": "Return to active",
+    "upNext": "Up next",
+    "waiting": "In queue",
+    "sort": {
+      "label": "Sort chapters",
+      "choose": "Choose sorting",
+      "reverse": "{{direction}}. Reverse order",
+      "addedHint": "File creation time. Unavailable dates appear last.",
+      "status": {
+        "label": "翻訳状態",
+        "ascending": "翻訳中を先に",
+        "descending": "翻訳済みを先に"
+      },
+      "added": {
+        "label": "Time added",
+        "ascending": "Oldest first",
+        "descending": "Newest first"
+      },
+      "size": {
+        "label": "File size",
+        "ascending": "Smallest first",
+        "descending": "Largest first"
+      },
+      "pages": {
+        "label": "Page count",
+        "ascending": "Fewest pages first",
+        "descending": "Most pages first"
+      }
+    },
+    "layout": {
+      "caption": "Show titles below covers",
+      "overlay": "Show titles on covers"
+    },
+    "pause": "Pause",
+    "pausing": "Pausing…",
+    "paused": "Paused",
+    "resume": "Resume",
+    "stageProgress": "Chapter stages",
+    "removeFromQueue": "{{chapter}}をキューから削除",
+    "dragToReorder": "Drag to reorder",
+    "addArchives": "Add archives",
+    "useCurrentOutput": "Current output folder",
+    "useImportOutput": "This import’s output folder",
+    "otherOutput": "Choose another folder",
+    "adding": "Adding…",
+    "addCount": "Add {{count}} chapters",
+    "addRemaining": "Add remaining",
+    "noNewArchives": "These archives are already in your library.",
+    "noReadableArchives": "No readable CBZ archives in this folder.",
+    "addCount_one": "Add {{count}} chapter",
+    "addCount_other": "Add {{count}} chapters"
   }
 }

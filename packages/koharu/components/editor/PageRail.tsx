@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { PageDropZone } from '@/components/editor/PageDropZone'
 import { ResourceMonitor } from '@/components/editor/ResourceMonitor'
 import { call } from '@/lib/backend'
 import {
@@ -73,7 +74,7 @@ export function PageRail() {
   const selected = useKoharuStore((state) => state.selectedPages)
   const selectPages = useKoharuStore((state) => state.selectPages)
   const selectLayers = useKoharuStore((state) => state.selectLayers)
-  const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
+  const setWorkspace = useKoharuStore((state) => state.setWorkspace)
   const { importPages, importing } = useImportPages()
   const anchor = useRef<number | null>(null)
   const selectionRequest = useRef(0)
@@ -272,6 +273,11 @@ export function PageRail() {
             <p className='mt-1 text-[10px] leading-4 text-muted-foreground'>
               {t('navigator.emptyDescription')}
             </p>
+            <PageDropZone
+              importing={importing}
+              onDrop={(paths) => importPages({ kind: 'paths', paths })}
+              onBrowse={() => importPages({ kind: 'files' })}
+            />
             <div className='mt-3'>
               <PageImportMenu importing={importing} onImport={importPages} />
             </div>
@@ -335,7 +341,7 @@ export function PageRail() {
                   size='icon'
                   className='size-8 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground'
                   aria-label={t('menu.settings')}
-                  onClick={() => setSettingsOpen(true)}
+                  onClick={() => setWorkspace('settings')}
                 />
               }
             >
@@ -423,7 +429,7 @@ function PageImportMenu({
         <DropdownMenuItem
           disabled={importing}
           className='min-h-7 gap-1 px-1.5 py-0.5 text-[11px] [&_svg:not([class*="size-"])]:size-3.5'
-          onClick={() => onImport('files')}
+          onClick={() => onImport({ kind: 'files' })}
         >
           <FilePlus2 />
           {t('navigator.importFiles')}
@@ -431,7 +437,7 @@ function PageImportMenu({
         <DropdownMenuItem
           disabled={importing}
           className='min-h-7 gap-1 px-1.5 py-0.5 text-[11px] [&_svg:not([class*="size-"])]:size-3.5'
-          onClick={() => onImport('folder')}
+          onClick={() => onImport({ kind: 'folder' })}
         >
           <FolderOpen />
           {t('navigator.importFolder')}

@@ -10,11 +10,14 @@ mod minimax;
 mod openai;
 mod openai_compatible;
 mod openrouter;
+mod scheduler;
+pub(crate) mod transport;
 
 use anyhow::Context;
 use futures::{FutureExt, future::BoxFuture, future::join_all};
-use reqwest::{Client, RequestBuilder, StatusCode};
-use serde::de::DeserializeOwned;
+use reqwest::Client;
+pub(crate) use scheduler::Scheduler;
+pub(super) use transport::{Disposition, http_disposition, send_json};
 
 pub use caiyun::CaiyunConfig;
 pub use claude::ClaudeConfig;
@@ -30,8 +33,7 @@ pub use openai_compatible::OpenAiCompatibleConfig;
 pub use openrouter::OpenRouterConfig;
 
 use crate::{
-    Error, GenerationConfig, Model, ModelSelection, Provider, ProvidersConfig, Result,
-    TranslationRequest,
+    GenerationConfig, Model, ModelSelection, Provider, ProvidersConfig, Result, TranslationRequest,
 };
 
 pub(crate) async fn translate(
@@ -128,38 +130,32 @@ fn append_models(models: &mut Vec<Model>, result: Result<Vec<Model>>) {
     }
 }
 
-pub(super) async fn send_json<T: DeserializeOwned>(
-    provider: &'static str,
-    request: RequestBuilder,
-) -> Result<T> {
-    let response = request
-        .send()
-        .await
-        .with_context(|| format!("{provider} request failed"))?;
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .with_context(|| format!("failed to read {provider} response"))?;
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
+#[serde(default)]
+pub struct RemoteConfig {
+    pub concurrency: u8,
+}
 
-    if !status.is_success() {
-        let lower = text.to_ascii_lowercase();
-        if status == StatusCode::TOO_MANY_REQUESTS
-            || lower.contains("insufficient_quota")
-            || lower.contains("resource_exhausted")
-            || lower.contains("rate limit exceeded")
-            || lower.contains("credit balance is too low")
-        {
-            return Err(Error::QuotaExceeded { provider });
-        }
-        return Err(Error::Api {
-            provider,
-            status: status.as_u16(),
-            message: text.chars().take(4096).collect(),
-        });
+impl Default for RemoteConfig {
+    fn default() -> Self {
+        Self { concurrency: 6 }
     }
+}
 
-    serde_json::from_str(&text)
-        .with_context(|| format!("failed to decode {provider} response"))
-        .map_err(Into::into)
+impl RemoteConfig {
+    #[must_use]
+    pub fn parallelism(&self) -> usize {
+        usize::from(self.concurrency.clamp(1, 16))
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+    #[test]
+    fn bounds_cloud_concurrency() {
+        assert_eq!(RemoteConfig::default().parallelism(), 6);
+        assert_eq!(RemoteConfig { concurrency: 0 }.parallelism(), 1);
+        assert_eq!(RemoteConfig { concurrency: 255 }.parallelism(), 16);
+    }
 }

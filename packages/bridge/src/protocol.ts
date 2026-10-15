@@ -19,6 +19,22 @@ export const commands = {
 	can_undo: boolean,
 	can_redo: boolean,
 } | null>) => __TAURI_INVOKE<StartupState>("subscribe", { onCanvas: mapChannel(onCanvas, (v) => ({...v,revision:v.revision==null?v.revision:v.revision})), onJob, onDownload, onResources: mapChannel(onResources, (v) => ({...v,devices:v.devices.map(i=>({...i,memory_budget:i.memory_budget==null?i.memory_budget:i.memory_budget,memory_used:i.memory_used==null?i.memory_used:i.memory_used,utilization:i.utilization==null?i.utilization:i.utilization}))})), onProject }).then((v) => (({...v,preferences:({...v.preferences,pipeline:({...v.preferences.pipeline,translation:({...v.preferences.pipeline.translation,generation:({...v.preferences.pipeline.translation.generation,temperature:v.preferences.pipeline.translation.generation.temperature==null?v.preferences.pipeline.translation.generation.temperature:v.preferences.pipeline.translation.generation.temperature,top_p:v.preferences.pipeline.translation.generation.top_p==null?v.preferences.pipeline.translation.generation.top_p:v.preferences.pipeline.translation.generation.top_p,min_p:v.preferences.pipeline.translation.generation.min_p==null?v.preferences.pipeline.translation.generation.min_p:v.preferences.pipeline.translation.generation.min_p,repeat_penalty:v.preferences.pipeline.translation.generation.repeat_penalty==null?v.preferences.pipeline.translation.generation.repeat_penalty:v.preferences.pipeline.translation.generation.repeat_penalty,frequency_penalty:v.preferences.pipeline.translation.generation.frequency_penalty==null?v.preferences.pipeline.translation.generation.frequency_penalty:v.preferences.pipeline.translation.generation.frequency_penalty,presence_penalty:v.preferences.pipeline.translation.generation.presence_penalty==null?v.preferences.pipeline.translation.generation.presence_penalty:v.preferences.pipeline.translation.generation.presence_penalty})}),processor:({...v.preferences.pipeline.processor,"koharu-layout-rfdetr-seg-2xl":v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"]==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"]:({...v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"],text_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].text_threshold==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].text_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].text_threshold,bubble_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].bubble_threshold==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].bubble_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].bubble_threshold,panel_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].panel_threshold==null?v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].panel_threshold:v.preferences.pipeline.processor["koharu-layout-rfdetr-seg-2xl"].panel_threshold})})})}),jobs:v.jobs.map(i=>i),canvas:({...v.canvas,revision:v.canvas.revision==null?v.canvas.revision:v.canvas.revision})}) as typeof v)),
+	browseBatchSource: () => __TAURI_INVOKE<{
+	path: string,
+	default_output: string,
+	chapters: BatchChapter[],
+	exported: BatchExport[],
+} | null>("browse_batch_source").then((v) => (v==null?v:({...v,chapters:v.chapters.map(i=>({...i,created_at:i.created_at==null?i.created_at:i.created_at}))}) as typeof v)),
+	browseBatchOutput: () => __TAURI_INVOKE<string | null>("browse_batch_output"),
+	getBatchExports: (chapters: string[], output: string) => __TAURI_INVOKE<BatchExport[]>("get_batch_exports", { chapters, output }),
+	processBatch: (request: BatchRequest, onEvent: Channel<BatchEvent>) => __TAURI_INVOKE<BatchReport>("process_batch", { request, onEvent }),
+	stopBatch: () => __TAURI_INVOKE<null>("stop_batch"),
+	pauseBatch: (id: string) => __TAURI_INVOKE<boolean>("pause_batch", { id }),
+	resumeBatch: (id: string) => __TAURI_INVOKE<null>("resume_batch", { id }),
+	appendBatch: (id: string, chapters: BatchEntry[]) => __TAURI_INVOKE<null>("append_batch", { id, chapters }),
+	reorderBatch: (id: string, path: string, before: string | null) => __TAURI_INVOKE<null>("reorder_batch", { id, path, before }),
+	removeBatch: (id: string, path: string) => __TAURI_INVOKE<null>("remove_batch", { id, path }),
+	retryBatch: (id: string, path: string) => __TAURI_INVOKE<null>("retry_batch", { id, path }),
 	getProject: () => __TAURI_INVOKE<{
 	name: string,
 	revision: Revision,
@@ -55,7 +71,7 @@ export const commands = {
 	redo: () => __TAURI_INVOKE<null>("redo"),
 	process: (scope: Scope, operation: Operation) => __TAURI_INVOKE<JobId>("process", { scope, operation }),
 	stopJob: (job: JobId) => __TAURI_INVOKE<null>("stop_job", { job }),
-	export: (format: ExportFormat) => __TAURI_INVOKE<null>("export", { format }),
+	export: (request: ExportRequest) => __TAURI_INVOKE<null>("export", { request }),
 	getThumbnail: (page: EntityId) => __TAURI_INVOKE<ThumbnailBytes>("get_thumbnail", { page }),
 	getFonts: () => __TAURI_INVOKE<FontFamily[]>("get_fonts"),
 	getFontPreview: (familyName: string) => __TAURI_INVOKE<FontPreviewBytes>("get_font_preview", { familyName }),
@@ -98,6 +114,54 @@ export type AnalysisRegion = {
 	geometry: Geometry,
 	kind: string,
 	label: string | null,
+};
+
+export type BatchChapter = {
+	path: string,
+	name: string,
+	size: number,
+	created_at: number | null,
+	pages: number,
+	thumbnail: string | null,
+	error: string | null,
+};
+
+export type BatchEntry = {
+	path: string,
+	output: string,
+	replacement: string | null,
+};
+
+export type BatchEvent = { event: "started"; total_chapters: number } | { event: "queue_changed"; paths: string[] } | { event: "chapter_queued"; path: string } | { event: "chapter_started"; path: string; name: string; pages: number } | { event: "chapter_progress"; path: string; completed_pages: number; active_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; path: string } | { event: "chapter_rendered"; path: string; completed_pages: number; total_pages: number } | { event: "chapter_finished"; path: string; output: string } | { event: "chapter_skipped"; path: string; output: string } | { event: "chapter_failed"; path: string; name: string; error: string } | { event: "finished"; report: BatchReport };
+
+export type BatchExport = {
+	source: string,
+	output: string,
+};
+
+export type BatchFailure = {
+	chapter: string,
+	error: string,
+};
+
+export type BatchReport = {
+	completed: number,
+	skipped: number,
+	failures: BatchFailure[],
+	stopped: boolean,
+};
+
+export type BatchRequest = {
+	id: string,
+	chapters: BatchEntry[],
+	jpeg_quality: number,
+};
+
+export type BatchSource = {
+	path: string,
+	default_output: string,
+	chapters: BatchChapter[],
+	exported: BatchExport[],
 };
 
 export type Bounds = {
@@ -180,7 +244,7 @@ export type Error = string;
 
 export type Event = { type: "started"; run: RunId } | { type: "text_delta"; run: RunId; delta: string } | { type: "reasoning_delta"; run: RunId; delta: string } | { type: "tool_started"; run: RunId; call_id: string; name: string } | { type: "tool_finished"; run: RunId; call_id: string; name: string; changed: boolean; output: string } | { type: "completed"; run: RunId; message: string } | { type: "failed"; run: RunId; message: string } | { type: "cancelled"; run: RunId };
 
-export type ExportFormat = "png" | "psd" | "cbz";
+export type ExportRequest = { kind: "current_page"; page: EntityId; format: PageExportFormat } | { kind: "entire_project"; format: ProjectExportFormat };
 
 export type Flux2KleinConfig = {
 	prompt?: string,
@@ -356,7 +420,9 @@ export type Page = {
 	regions: AnalysisRegion[],
 };
 
-export type PageImportSource = "files" | "folder";
+export type PageExportFormat = "png" | "psd";
+
+export type PageImportSource = { kind: "files" } | { kind: "folder" } | { kind: "paths"; paths: string[] };
 
 export type PageSelection = {
 	project: ProjectInfo,
@@ -411,6 +477,8 @@ export type ProcessorConfig = {
 	"rorem-mixed"?: RoremMixedConfig | null,
 };
 
+export type ProjectExportFormat = "png" | "psd" | "cbz";
+
 export type ProjectInfo = {
 	name: string,
 	revision: Revision,
@@ -446,6 +514,10 @@ export type Quantization = {
 export type RasterLayerKind = "cleanup" | "paint";
 
 export type Reasoning = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+
+export type RemoteConfig = {
+	concurrency?: number,
+};
 
 export type Revision = number;
 
@@ -499,6 +571,7 @@ export type Translation = {
 };
 
 export type TranslationConfig = {
+	remote?: RemoteConfig,
 	model: ModelSelection,
 	generation: GenerationConfig,
 	target_language: string,

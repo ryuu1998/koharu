@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use futures::future::try_join_all;
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use image::{
     ExtendedColorType, ImageEncoder as _,
     codecs::png::{CompressionType, FilterType, PngEncoder},
@@ -8,15 +8,16 @@ use koharu_psd::{PsdExportOptions, export_page};
 use koharu_rasterizer::{Raster, RasterOptions, Rasterizer};
 use koharu_renderer::{Frame, Renderer};
 use koharu_scene::{AssetRole, EntityId, Snapshot};
-use rayon::prelude::*;
 use serde::Deserialize;
 use specta::Type;
-use std::{io::Write as _, sync::Arc};
+use std::sync::Arc;
 use tauri::{State, WebviewWindow, ipc::IpcResponse};
 use tauri_runtime_cef::CefRuntime;
 
 use super::{Error, project::CurrentProject};
 use koharu_desktop::Desktop;
+
+pub(super) mod cbz;
 
 const THUMBNAIL_EDGE: u32 = 128;
 
@@ -32,17 +33,36 @@ impl IpcResponse for ThumbnailBytes {
 
 #[derive(Clone, Copy, Debug, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-pub enum ExportFormat {
+pub enum ProjectExportFormat {
     Png,
     Psd,
     Cbz,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PageExportFormat {
+    Png,
+    Psd,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExportRequest {
+    CurrentPage {
+        page: EntityId,
+        format: PageExportFormat,
+    },
+    EntireProject {
+        format: ProjectExportFormat,
+    },
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn export(
     window: WebviewWindow<CefRuntime>,
-    format: ExportFormat,
+    request: ExportRequest,
     project: State<'_, CurrentProject>,
     desktop: State<'_, Desktop>,
 ) -> std::result::Result<(), Error> {
@@ -51,14 +71,42 @@ pub(crate) async fn export(
         let project = project.as_ref().context("no project is open")?;
         (project.name.clone(), project.snapshot())
     };
-    let pages = snapshot.pages().map(|page| page.id()).collect::<Vec<_>>();
+    let (format, current_page) = match request {
+        ExportRequest::CurrentPage { page, format } => (
+            match format {
+                PageExportFormat::Png => ProjectExportFormat::Png,
+                PageExportFormat::Psd => ProjectExportFormat::Psd,
+            },
+            Some(page),
+        ),
+        ExportRequest::EntireProject { format } => (format, None),
+    };
+    let pages = if let Some(page) = current_page {
+        snapshot.page(page)?.page()?;
+        vec![page]
+    } else {
+        snapshot.pages().map(|page| page.id()).collect::<Vec<_>>()
+    };
     if pages.is_empty() {
         return Err(anyhow::anyhow!("there are no pages to export").into());
     }
     let dialog = rfd::AsyncFileDialog::new().set_parent(&window);
-    let destination = match format {
-        ExportFormat::Png | ExportFormat::Psd => dialog.pick_folder().await,
-        ExportFormat::Cbz => {
+    let destination = match (current_page, format) {
+        (Some(page), format) => {
+            let extension = match format {
+                ProjectExportFormat::Png => "png",
+                ProjectExportFormat::Psd => "psd",
+                ProjectExportFormat::Cbz => unreachable!(),
+            };
+            let label = page_stem(&snapshot.page(page)?.page()?.label);
+            dialog
+                .add_filter(extension.to_uppercase(), &[extension])
+                .set_file_name(format!("{label}.{extension}"))
+                .save_file()
+                .await
+        }
+        (None, ProjectExportFormat::Png | ProjectExportFormat::Psd) => dialog.pick_folder().await,
+        (None, ProjectExportFormat::Cbz) => {
             dialog
                 .add_filter("Comic Book Archive", &["cbz"])
                 .set_file_name(format!("{name}.cbz"))
@@ -69,91 +117,122 @@ pub(crate) async fn export(
     let Some(destination) = destination.map(|destination| destination.path().to_owned()) else {
         return Ok(());
     };
+    let destination = if current_page.is_none() && !matches!(format, ProjectExportFormat::Cbz) {
+        let directory = destination.join(name);
+        tokio::fs::create_dir_all(&directory).await?;
+        directory
+    } else {
+        destination
+    };
     let renderer = desktop.renderer();
     let rasterizer = desktop.rasterizer().await?;
-    let frames = try_join_all(pages.iter().map(|&page| renderer.render(&snapshot, page))).await?;
-    let (extension, images) = match format {
-        ExportFormat::Png | ExportFormat::Cbz => {
-            let images = tokio_rayon::spawn(move || {
-                frames
-                    .par_iter()
-                    .map(|frame| -> Result<_> {
-                        let image = rasterizer
-                            .rasterize(&frame.raster_frame()?, RasterOptions::default())?
+    if matches!(format, ProjectExportFormat::Cbz) {
+        let ready = stream::iter(pages.into_iter().map(|page| Ok((page, snapshot.clone()))));
+        let prepared = cbz::prepare(
+            snapshot.clone(),
+            ready,
+            renderer,
+            rasterizer,
+            cbz::DEFAULT_QUALITY,
+            koharu_pipeline::RunControl::default(),
+            None,
+        )
+        .await?;
+        prepared.write(destination, None, true).await?;
+        return Ok(());
+    }
+    let width = pages.len().to_string().len().max(4);
+    stream::iter(pages.into_iter().enumerate())
+        .map(|(index, page)| {
+            let snapshot = snapshot.clone();
+            let renderer = renderer.clone();
+            let rasterizer = Arc::clone(&rasterizer);
+            let destination = destination.clone();
+            async move {
+                let stem = page_stem(&snapshot.page(page)?.page()?.label);
+                let frame = renderer.render(&snapshot, page).await?;
+                let (extension, bytes) = match format {
+                    ProjectExportFormat::Png => {
+                        let image = rasterize(rasterizer, &frame, RasterOptions::default())
+                            .await?
                             .image;
-                        let mut bytes = Vec::new();
-                        PngEncoder::new_with_quality(
-                            &mut bytes,
-                            CompressionType::Best,
-                            FilterType::Adaptive,
-                        )
-                        .write_image(
-                            image.as_raw(),
-                            image.width(),
-                            image.height(),
-                            ExtendedColorType::Rgba8,
-                        )?;
-                        Ok(bytes)
-                    })
-                    .collect::<Result<Vec<_>>>()
-            })
-            .await?;
-            ("png", images)
-        }
-        ExportFormat::Psd => {
-            let options = PsdExportOptions::default();
-            let images = try_join_all(
-                frames
-                    .iter()
-                    .map(|frame| export_page(Arc::clone(&rasterizer), &snapshot, frame, &options)),
-            )
-            .await?;
-            ("psd", images)
-        }
-    };
-    tokio_rayon::spawn(move || -> Result<()> {
-        let mut archive = if matches!(format, ExportFormat::Cbz) {
-            let directory = destination.parent().context("archive path has no parent")?;
-            Some(zip::ZipWriter::new(tempfile::NamedTempFile::new_in(
-                directory,
-            )?))
-        } else {
-            None
-        };
-        let width = pages.len().to_string().len().max(4);
-        // Async preparation and indexed encoding both preserve project order.
-        for (index, (page_id, bytes)) in pages.into_iter().zip(images).enumerate() {
-            let page = snapshot.page(page_id)?.page()?;
-            let name = page
-                .label
-                .trim()
-                .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
-            let name = name
-                .rsplit_once('.')
-                .map_or(name, |(stem, _)| stem)
-                .replace(['<', '>', ':', '"', '/', '\\', '|', '?', '*'], "_");
-            let name = format!(
-                "{:0width$}_{}.{extension}",
-                index + 1,
-                if name.is_empty() { "page" } else { &name }
-            );
-            if let Some(archive) = &mut archive {
-                // PNG data is already compressed.
-                let options = zip::write::SimpleFileOptions::default()
-                    .compression_method(zip::CompressionMethod::Stored);
-                archive.start_file(name, options)?;
-                archive.write_all(&bytes)?;
-            } else {
-                std::fs::write(destination.join(name), bytes)?;
+                        let bytes = tokio_rayon::spawn(move || -> Result<Vec<u8>> {
+                            let mut bytes = Vec::new();
+                            PngEncoder::new_with_quality(
+                                &mut bytes,
+                                CompressionType::Best,
+                                FilterType::Adaptive,
+                            )
+                            .write_image(
+                                image.as_raw(),
+                                image.width(),
+                                image.height(),
+                                ExtendedColorType::Rgba8,
+                            )?;
+                            Ok(bytes)
+                        })
+                        .await?;
+                        ("png", bytes)
+                    }
+                    ProjectExportFormat::Psd => (
+                        "psd",
+                        export_page(rasterizer, &snapshot, &frame, &PsdExportOptions::default())
+                            .await?,
+                    ),
+                    ProjectExportFormat::Cbz => unreachable!(),
+                };
+                let path = if current_page.is_some() {
+                    destination
+                } else {
+                    destination.join(format!("{:0width$}_{stem}.{extension}", index + 1))
+                };
+                tokio::fs::write(path, bytes).await?;
+                Ok::<_, anyhow::Error>(())
             }
-        }
-        if let Some(archive) = archive {
-            archive.finish()?.persist(destination)?;
-        }
-        Ok(())
-    })
-    .await?;
+        })
+        .buffer_unordered(4)
+        .try_collect::<Vec<_>>()
+        .await?;
     Ok(())
+}
+
+fn page_stem(label: &str) -> String {
+    let label = label
+        .trim()
+        .trim_end_matches(|character: char| character == '.' || character.is_whitespace());
+    let label = label.rsplit_once('.').map_or(label, |(stem, _)| stem);
+    let stem = label
+        .chars()
+        .map(|character| {
+            if character.is_control()
+                || matches!(
+                    character,
+                    '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                )
+            {
+                '_'
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    if stem.is_empty() {
+        "page".to_owned()
+    } else {
+        stem
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_filenames_remove_extensions_and_path_characters() {
+        assert_eq!(page_stem("page: 2/3.png"), "page_ 2_3");
+        assert_eq!(page_stem("  ...  "), "page");
+        assert_eq!(page_stem("front.page.png"), "front.page");
+    }
 }
 
 #[tauri::command]
