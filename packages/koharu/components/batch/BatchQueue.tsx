@@ -275,7 +275,6 @@ export function BatchQueue() {
                   <span
                     className={cn(
                       'batch-queue-cover relative grid shrink-0 place-items-center overflow-hidden rounded bg-[var(--surface-well)]',
-                      done && 'ring-1 ring-green-600/35',
                     )}
                     style={{ width: focused ? 52.8 : 21.6, height: focused ? 70.8 : 28.8 }}
                   >

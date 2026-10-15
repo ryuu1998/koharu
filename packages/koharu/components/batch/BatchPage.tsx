@@ -282,7 +282,6 @@ export function BatchPage() {
                 {chapters.map((chapter) => {
                   const done = exported.includes(chapter.path)
                   const status = statuses[chapter.path]
-                  const active = status === 'running' || status === 'exporting'
                   const failed = !!chapter.error || status === 'failed'
                   const caption = done
                     ? status === 'translated'
@@ -298,19 +297,14 @@ export function BatchPage() {
                       key={chapter.path}
                       className={cn(
                         'group relative flex min-w-0 flex-col rounded-lg p-2',
-                        !busy && !chapter.error && !done && 'cursor-pointer hover:bg-muted/50',
-                        selected.includes(chapter.path) &&
-                          !done &&
-                          'bg-primary/[0.035] ring-1 ring-primary/15 ring-inset',
-                        active && 'bg-primary/[0.06] ring-primary/35',
-                        done && 'bg-green-600/[0.055] ring-1 ring-green-600/25 ring-inset',
+                        !busy && !chapter.error && !done && 'cursor-pointer hover:bg-muted/30',
                       )}
                       title={[
                         chapter.name,
                         t(caption),
                         t('batch.pages', { count: chapter.pages }),
                         `${(chapter.size / 1048576).toFixed(1)} MB`,
-                      ].join(' · ')}
+                      ].join(' Â· ')}
                       style={{ width: cardSize + 16 }}
                     >
                       <span
@@ -331,9 +325,21 @@ export function BatchPage() {
                             strokeWidth={1.25}
                           />
                         )}
+                        {done && (
+                          <span
+                            className='absolute top-1 left-1 inline-flex max-w-[calc(100%-28px)] items-center gap-1 rounded bg-background/95 px-1 py-0.5 text-[9px] leading-3 font-medium text-green-700 dark:text-green-300'
+                            title={t(caption)}
+                          >
+                            <span
+                              className='size-1 shrink-0 rounded-full bg-green-600 dark:bg-green-400'
+                              aria-hidden='true'
+                            />
+                            <span className='truncate'>{t('batch.translated')}</span>
+                          </span>
+                        )}
                         <span
                           className={cn(
-                            'absolute top-1 left-1 grid size-5 place-items-center rounded',
+                            'absolute top-1 right-1 grid size-5 place-items-center rounded',
                             !chapter.error && 'bg-background/95',
                             done && 'sr-only',
                           )}
@@ -372,34 +378,16 @@ export function BatchPage() {
                         className={cn(
                           'text-[11px] leading-4 font-medium break-words',
                           cardLayout === 'overlay'
-                            ? cn(
-                                'pointer-events-none absolute inset-x-2 rounded-b bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1.5 pt-5 pb-1.5 text-white',
-                                done ? 'bottom-7' : 'bottom-2',
-                              )
+                            ? 'pointer-events-none absolute inset-x-2 bottom-7 rounded-b bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1.5 pt-5 pb-1.5 text-white'
                             : 'mt-1.5 h-8',
                         )}
                         title={chapter.name}
                       >
                         <span className='line-clamp-2'>{chapter.name.replace(/\.cbz$/i, '')}</span>
                       </span>
-                      <span
-                        className='absolute top-3 right-3 rounded bg-black/70 px-1 py-0.5 text-[10px] leading-3 text-white tabular-nums'
-                        aria-label={t('batch.pages', { count: chapter.pages })}
-                      >
-                        {chapter.pages}P
+                      <span className='mt-1 text-[10px] leading-4 text-muted-foreground tabular-nums'>
+                        {t('batch.pages', { count: chapter.pages })}
                       </span>
-                      {done && (
-                        <span
-                          className='mt-1 flex items-center gap-1.5 text-[10px] leading-4 font-medium text-green-700 dark:text-green-300'
-                          title={t(caption)}
-                        >
-                          <span
-                            className='size-1.5 shrink-0 rounded-full bg-green-600 dark:bg-green-400'
-                            aria-hidden='true'
-                          />
-                          {t('batch.translated')}
-                        </span>
-                      )}
                       {failed && !done && (
                         <span className='sr-only' title={chapter.error ?? t(caption)}>
                           {t(caption)}
