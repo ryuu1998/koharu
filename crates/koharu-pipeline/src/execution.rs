@@ -136,6 +136,8 @@ impl<'a> Execution<'a> {
                 continue;
             }
             if let Err(error) = self.apply_completion(completion).await {
+                tracing::error!(stage = ?error.stage, kind = ?error.kind,
+                    "pipeline failed; draining in-flight work before reporting the chapter failure");
                 self.failure = Some(error);
             }
         }

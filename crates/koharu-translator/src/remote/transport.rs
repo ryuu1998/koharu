@@ -3,7 +3,7 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::Context;
@@ -45,6 +45,8 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
     request: RequestBuilder,
     classify: fn(StatusCode, &Value) -> Disposition,
 ) -> Result<T> {
+    static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+    let request_id = REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let context = CONTEXT.try_with(Clone::clone).ok();
     let control = context
         .as_ref()
@@ -52,6 +54,7 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
         .unwrap_or_default();
     let attempts = if context.is_some() { 5 } else { 1 };
     for attempt in 0..attempts {
+        let queued = Instant::now();
         let retry = request
             .try_clone()
             .context("remote request body cannot be replayed")?;
@@ -66,6 +69,15 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
             None => None,
         };
         let activity = control.admit().await.context("translation stopped")?;
+        let started = Instant::now();
+        tracing::info!(
+            provider,
+            request_id,
+            attempt = attempt + 1,
+            translation = context.is_some(),
+            wait_ms = queued.elapsed().as_millis(),
+            "remote request attempt started"
+        );
         let retry = if context.is_some() {
             retry.timeout(Duration::from_secs(90))
         } else {
@@ -80,6 +92,15 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
             Err(error) => {
                 drop(activity);
                 drop(_slot);
+                tracing::warn!(
+                    provider,
+                    request_id,
+                    attempt = attempt + 1,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    timeout = error.is_timeout(),
+                    connection_error = error.is_connect(),
+                    "remote request send failed"
+                );
                 // A response/read timeout may have completed and billed generation remotely.
                 // Retry only connection establishment failures, never ambiguous read failures.
                 if error.is_connect() && attempt + 1 < attempts {
@@ -94,14 +115,45 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
             }
         };
         let status = response.status();
+        tracing::info!(
+            provider,
+            request_id,
+            attempt = attempt + 1,
+            status = status.as_u16(),
+            elapsed_ms = started.elapsed().as_millis(),
+            "remote response headers received"
+        );
         let headers = response.headers().clone();
         let text = tokio::select! {
             () = control.cancelled() => return Err(anyhow::anyhow!("translation stopped").into()),
-            text = response.text() => text.with_context(|| format!("failed to read {provider} response"))?,
+            text = response.text() => text,
         };
+        let text = text
+            .inspect_err(|error| {
+                tracing::warn!(
+                    provider,
+                    request_id,
+                    attempt = attempt + 1,
+                    status = status.as_u16(),
+                    elapsed_ms = started.elapsed().as_millis(),
+                    timeout = error.is_timeout(),
+                    "remote response body failed"
+                );
+            })
+            .with_context(|| format!("failed to read {provider} response"))?;
         drop(activity);
         let body = serde_json::from_str::<Value>(&text);
         let disposition = classify(status, body.as_ref().unwrap_or(&Value::Null));
+        tracing::info!(
+            provider,
+            request_id,
+            attempt = attempt + 1,
+            status = status.as_u16(),
+            elapsed_ms = started.elapsed().as_millis(),
+            response_bytes = text.len(),
+            ?disposition,
+            "remote response body received"
+        );
         if disposition == Disposition::Success {
             let body = body.with_context(|| format!("failed to decode {provider} response"))?;
             let decoded = serde_json::from_value(body)
@@ -112,6 +164,12 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
             return Ok(decoded);
         }
         if disposition == Disposition::Quota {
+            tracing::warn!(
+                provider,
+                request_id,
+                status = status.as_u16(),
+                "remote quota exhausted"
+            );
             return Err(Error::QuotaExceeded { provider });
         }
         let failure = || Error::Api {
@@ -120,6 +178,14 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
             message: text.chars().take(4096).collect(),
         };
         if !matches!(disposition, Disposition::Retry(_)) || attempt + 1 == attempts {
+            tracing::warn!(
+                provider,
+                request_id,
+                attempt = attempt + 1,
+                status = status.as_u16(),
+                ?disposition,
+                "remote request failed without further retries"
+            );
             return Err(failure());
         }
         let hint = match disposition {
@@ -130,6 +196,13 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
             .or(hint)
             .unwrap_or_else(|| backoff(attempt));
         if delay > Duration::from_secs(120) {
+            tracing::warn!(
+                provider,
+                request_id,
+                status = status.as_u16(),
+                delay_ms = delay.as_millis(),
+                "remote retry delay exceeds budget"
+            );
             return Err(failure());
         }
         if let Some(context) = &context {
@@ -138,7 +211,10 @@ pub(crate) async fn send_json<T: DeserializeOwned>(
         drop(_slot);
         tracing::warn!(
             provider,
+            request_id,
             attempt = attempt + 1,
+            status = status.as_u16(),
+            elapsed_ms = started.elapsed().as_millis(),
             delay_ms = delay.as_millis(),
             "retrying transient translation request"
         );
