@@ -35,12 +35,14 @@ pub async fn run_batch(options: BatchOptions) -> Result<BatchReport> {
         chapters: batch_source::discover(&options.input)?
             .into_iter()
             .map(|path| BatchEntry {
+                replacement: options
+                    .overwrite
+                    .then(|| output.join(path.file_name().expect("archive filename"))),
                 path,
                 output: output.clone(),
             })
             .collect(),
         jpeg_quality: options.jpeg_quality,
-        overwrite: options.overwrite,
     };
 
     koharu_ml::init().await?;

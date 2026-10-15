@@ -27,11 +27,10 @@ export function sortBatchChapters(
 ): BatchChapter[] {
   const statusRank = (chapter: BatchChapter) => {
     const status = state.statuses[chapter.path]
-    if (state.exported.includes(chapter.path) || status === 'translated' || status === 'skipped')
-      return 5
+    if (status === 'running' || status === 'exporting') return 0
     if (status === 'failed' || chapter.error) return 4
     if (status === 'stopped') return 3
-    if (status === 'running' || status === 'exporting') return 0
+    if (state.exported[chapter.path] || status === 'translated' || status === 'skipped') return 5
     return state.selected.includes(chapter.path) ? 1 : 2
   }
   return [...chapters].sort((a, b) => {
@@ -60,7 +59,7 @@ interface BatchStore {
   cardLayout: 'overlay' | 'caption'
   sortBy: BatchSort
   sortDescending: boolean
-  exported: string[]
+  exported: Record<string, string>
   running: boolean
   stopping: boolean
   pauseState: 'playing' | 'pausing' | 'paused'
@@ -95,7 +94,7 @@ export const useBatchStore = create<BatchStore>()(
       cardLayout: 'overlay',
       sortBy: 'added',
       sortDescending: true,
-      exported: [],
+      exported: {},
       running: false,
       stopping: false,
       pauseState: 'playing',
@@ -117,7 +116,9 @@ export const useBatchStore = create<BatchStore>()(
             source.chapters.map((chapter) => [chapter.path, source.default_output]),
           ),
           selected: [],
-          exported: source.exported,
+          exported: Object.fromEntries(
+            source.exported.map(({ source, output }) => [source, output]),
+          ),
           report: null,
           progress: null,
           stages: {},
@@ -144,7 +145,7 @@ export const useBatchStore = create<BatchStore>()(
           destinations: Object.fromEntries(
             source.chapters.map((chapter) => [chapter.path, output]),
           ),
-          exported,
+          exported: Object.fromEntries(exported.map(({ source, output }) => [source, output])),
           statuses: {},
           errors: {},
           report: null,
@@ -165,14 +166,17 @@ export const useBatchStore = create<BatchStore>()(
           const paths = [...new Set(selected)].filter(
             (path) =>
               !current.queue.includes(path) &&
-              current.source?.chapters.some((chapter) => chapter.path === path && !chapter.error) &&
-              !current.exported.includes(path),
+              current.source?.chapters.some((chapter) => chapter.path === path && !chapter.error),
           )
           if (!paths.length || current.stopping || !current.runId) return
           await call(
             commands.appendBatch,
             current.runId,
-            paths.map((path) => ({ path, output: current.destinations[path] ?? current.output! })),
+            paths.map((path) => ({
+              path,
+              output: current.destinations[path] ?? current.output!,
+              replacement: current.exported[path] ?? null,
+            })),
           )
           if (get().runId === current.runId)
             set((state) => ({ selected: [...new Set([...state.selected, ...paths])] }))
@@ -298,8 +302,8 @@ export async function startBatch(): Promise<void> {
                 ? { ...state.errors, [path]: event.error }
                 : state.errors,
             exported:
-              status === 'translated' || status === 'skipped'
-                ? [...new Set([...state.exported, path])]
+              event.event === 'chapter_finished' || event.event === 'chapter_skipped'
+                ? { ...state.exported, [path]: event.output }
                 : state.exported,
           }))
         }
@@ -312,9 +316,9 @@ export async function startBatch(): Promise<void> {
         chapters: chapters.map((path) => ({
           path,
           output: state.destinations[path] ?? state.output!,
+          replacement: state.exported[path] ?? null,
         })),
         jpeg_quality: 95,
-        overwrite: false,
       },
       events,
     )
@@ -334,7 +338,10 @@ export async function startBatch(): Promise<void> {
         pauseState: 'playing',
         stageActivity: {},
         statuses,
-        selected: state.selected.filter((path) => !state.exported.includes(path)),
+        selected: state.selected.filter(
+          (path) =>
+            !state.exported[path] || statuses[path] === 'failed' || statuses[path] === 'stopped',
+        ),
       }
     })
   }
@@ -391,7 +398,7 @@ export async function addBatchSource(
     output,
   )
   const paths = fresh
-    .filter((chapter) => !chapter.error && !exported.includes(chapter.path))
+    .filter((chapter) => !chapter.error && !exported.some((entry) => entry.source === chapter.path))
     .map((chapter) => chapter.path)
   const current = useBatchStore.getState()
   if (current.running && (current.runId !== expectedRun || current.stopping))
@@ -400,7 +407,7 @@ export async function addBatchSource(
     await call(
       commands.appendBatch,
       current.runId,
-      paths.map((path) => ({ path, output })),
+      paths.map((path) => ({ path, output, replacement: null })),
     )
   }
   useBatchStore.setState((state) => ({
@@ -411,7 +418,10 @@ export async function addBatchSource(
       ...state.destinations,
       ...Object.fromEntries(fresh.map((chapter) => [chapter.path, output])),
     },
-    exported: [...new Set([...state.exported, ...exported])],
+    exported: {
+      ...state.exported,
+      ...Object.fromEntries(exported.map(({ source, output }) => [source, output])),
+    },
     selected: [...new Set([...state.selected, ...paths])],
     queue: state.running ? state.queue : [],
     report: state.running ? state.report : null,

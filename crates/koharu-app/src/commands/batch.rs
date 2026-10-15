@@ -34,7 +34,6 @@ pub struct BatchRequest {
     pub id: String,
     pub chapters: Vec<BatchEntry>,
     pub jpeg_quality: u8,
-    pub overwrite: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -336,7 +335,7 @@ pub(super) async fn run_chapters(
         };
         let chapter = entry.path;
         let output = entry.output;
-        if output.exists() && !request.overwrite {
+        if output.exists() && !entry.overwrite {
             report.skipped += 1;
             events(BatchEvent::ChapterSkipped {
                 path: chapter,
@@ -351,7 +350,7 @@ pub(super) async fn run_chapters(
                 &chapter,
                 output.clone(),
                 request.jpeg_quality,
-                request.overwrite,
+                entry.overwrite,
                 &pipeline,
                 &desktop,
                 stop.clone(),

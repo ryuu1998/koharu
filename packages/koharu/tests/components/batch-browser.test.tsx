@@ -55,7 +55,7 @@ beforeEach(() => {
     cardLayout: 'overlay',
     sortBy: 'added',
     sortDescending: true,
-    exported: [],
+    exported: {},
     running: false,
     stopping: false,
     pauseState: 'playing',
@@ -95,6 +95,88 @@ const sortableSource: BatchSource = {
 }
 
 describe('batch chapter browser', () => {
+  it('keeps cancelled retranslation selected without discarding its existing output', async () => {
+    useBatchStore.getState().setSource(source)
+    const path = source.chapters[0].path
+    const output = `${source.default_output}\\chapter1.cbz`
+    useBatchStore.setState({ exported: { [path]: output } })
+    await useBatchStore.getState().select([path])
+    vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
+      channel.onmessage({ event: 'chapter_started', path, name: 'chapter1.cbz', pages: 32 })
+      return { completed: 0, skipped: 0, stopped: true, failures: [] }
+    })
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate 1 chapter' }))
+    await waitFor(() => expect(useBatchStore.getState().statuses[path]).toBe('stopped'))
+    expect(useBatchStore.getState().exported[path]).toBe(output)
+    expect(useBatchStore.getState().selected).toEqual([path])
+    expect(screen.getByRole('button', { name: 'Retranslate 1 chapter' })).toBeEnabled()
+  })
+
+  it('keeps translated status visible while selecting a chapter for exact-path replacement', async () => {
+    useBatchStore.getState().setSource(source)
+    const path = source.chapters[0].path
+    const replacement = `${source.default_output}\\chapter1 (2).cbz`
+    useBatchStore.setState({ exported: { [path]: replacement } })
+    const run = vi
+      .spyOn(commands, 'processBatch')
+      .mockResolvedValue({ completed: 1, skipped: 0, stopped: false, failures: [] })
+    render(<BatchPage />)
+    const badge = screen.getByText('Translated')
+    expect(badge).toBeVisible()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'chapter1.cbz' }))
+    expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeChecked()
+    expect(badge).toBeVisible()
+    expect(screen.getByText('1 existing output will be replaced')).toBeVisible()
+    expect(
+      within(screen.getByRole('complementary', { name: 'Queue' })).getByText(
+        'Queued to retranslate',
+      ),
+    ).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate 1 chapter' }))
+    await waitFor(() => expect(run).toHaveBeenCalledOnce())
+    expect(run.mock.calls[0][0].chapters).toEqual([
+      { path, output: source.default_output, replacement },
+    ])
+  })
+
+  it('marks replacement only on translated chapters in a mixed selection and keeps old output after failure', async () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    const output = `${source.default_output}\\chapter1.cbz`
+    useBatchStore.setState({ exported: { [paths[0]]: output } })
+    await useBatchStore.getState().select([paths[0], paths[1]])
+    const run = vi.spyOn(commands, 'processBatch').mockImplementation(async (_request, channel) => {
+      channel.onmessage({
+        event: 'chapter_started',
+        path: paths[0],
+        name: 'chapter1.cbz',
+        pages: 32,
+      })
+      channel.onmessage({
+        event: 'chapter_failed',
+        path: paths[0],
+        name: 'chapter1.cbz',
+        error: 'Provider failed',
+      })
+      return {
+        completed: 0,
+        skipped: 0,
+        stopped: false,
+        failures: [{ chapter: paths[0], error: 'Provider failed' }],
+      }
+    })
+    render(<BatchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Translate 2 chapters' }))
+    await waitFor(() => expect(useBatchStore.getState().running).toBe(false))
+    expect(run.mock.calls[0][0].chapters).toEqual([
+      { path: paths[0], output: source.default_output, replacement: output },
+      { path: paths[1], output: source.default_output, replacement: null },
+    ])
+    expect(useBatchStore.getState().exported[paths[0]]).toBe(output)
+    expect(screen.getByRole('button', { name: 'Retry chapter1.cbz' })).toBeEnabled()
+  })
+
   it('removes idle selections without removing the archive from the library', async () => {
     useBatchStore.getState().setSource(sortableSource)
     const paths = sortableSource.chapters.map((chapter) => chapter.path)
@@ -155,7 +237,7 @@ describe('batch chapter browser', () => {
       selected: paths,
       queue: paths,
       statuses: { [paths[0]]: 'running' },
-      exported: [paths[2]],
+      exported: { [paths[2]]: 'output/chapter10.cbz' },
     })
     const state = useBatchStore.getState()
     expect(
@@ -174,7 +256,7 @@ describe('batch chapter browser', () => {
       queue: paths,
       selected: [],
       statuses: Object.fromEntries(paths.map((path) => [path, 'translated'])),
-      exported: paths,
+      exported: Object.fromEntries(paths.map((path) => [path, `output/${path}`])),
     })
     render(<BatchPage />)
     expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith({ top: 96, behavior: 'smooth' })
@@ -281,7 +363,7 @@ describe('batch chapter browser', () => {
     useBatchStore.getState().setSource(source)
     render(<BatchPage />)
     const name = screen.getByRole('checkbox', { name: 'chapter1.cbz' })
-    expect(screen.getByLabelText('32 pages')).toHaveTextContent('32P')
+    expect(screen.getByText('32 pages')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Show titles below covers' }))
     expect(useBatchStore.getState().cardLayout).toBe('caption')
     expect(name).toBeInTheDocument()
@@ -364,7 +446,7 @@ describe('batch chapter browser', () => {
       'aria-valuenow',
       '80',
     )
-    expect(useBatchStore.getState().exported).toEqual([])
+    expect(useBatchStore.getState().exported).toEqual({})
     fireEvent.click(screen.getByRole('button', { name: 'Collapse queue' }))
     act(() => {
       events?.onmessage({
@@ -391,11 +473,17 @@ describe('batch chapter browser', () => {
     })
   })
   it('marks previous exports and updates selection for a different output folder', async () => {
-    useBatchStore.getState().setSource({ ...source, exported: [source.chapters[0].path] })
+    useBatchStore.getState().setSource({
+      ...source,
+      exported: [{ source: source.chapters[0].path, output: 'output/chapter1.cbz' }],
+    })
     const check = vi.spyOn(commands, 'getBatchExports').mockResolvedValue([])
     render(<BatchPage />)
-    expect(screen.getByText('Translated')).toHaveAttribute('title', 'Already translated')
-    expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeDisabled()
+    expect(screen.getByText('Translated').closest('[title]')).toHaveAttribute(
+      'title',
+      'Already translated',
+    )
+    expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeEnabled()
     expect(useBatchStore.getState().selected).toEqual([])
     await useBatchStore.getState().setOutput('D:\\Translated')
     await waitFor(() =>
@@ -605,9 +693,10 @@ describe('batch chapter browser', () => {
     await waitFor(() => expect(run).toHaveBeenCalledOnce())
     expect(run.mock.calls[0][0]).toEqual({
       id: expect.any(String),
-      chapters: [{ path: source.chapters[0].path, output: source.default_output }],
+      chapters: [
+        { path: source.chapters[0].path, output: source.default_output, replacement: null },
+      ],
       jpeg_quality: 95,
-      overwrite: false,
     })
     expect(screen.getByRole('checkbox', { name: 'chapter1.cbz' })).toBeDisabled()
     expect(screen.getByRole('progressbar', { name: 'Chapter progress' })).toBeInTheDocument()

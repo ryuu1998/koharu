@@ -11,12 +11,14 @@ use specta::Type;
 pub struct BatchEntry {
     pub path: PathBuf,
     pub output: PathBuf,
+    pub replacement: Option<PathBuf>,
 }
 
 #[derive(Clone)]
 pub(super) struct WorkItem {
     pub path: PathBuf,
     pub output: PathBuf,
+    pub overwrite: bool,
     source_key: PathBuf,
     output_key: PathBuf,
 }
@@ -67,11 +69,37 @@ impl Queue {
             }
             let name = entry.path.file_name().context("chapter has no filename")?;
             let directory = absolute_target(&entry.output)?;
-            let mut target = directory.join(name);
+            let mut target = match &entry.replacement {
+                Some(path) => {
+                    let target = absolute_target(path)?;
+                    ensure!(
+                        target
+                            .parent()
+                            .is_some_and(|parent| path_key(parent) == path_key(&directory)),
+                        "replacement must be inside the selected output folder"
+                    );
+                    ensure!(
+                        super::batch_source::is_cbz(&target),
+                        "replacement must be a CBZ archive"
+                    );
+                    ensure!(
+                        !target.exists() || target.is_file(),
+                        "replacement must be a file"
+                    );
+                    ensure!(
+                        !outputs.contains(&path_key(&target)),
+                        "another chapter already owns this output"
+                    );
+                    target
+                }
+                None => directory.join(name),
+            };
             // A different source with the same basename gets its own output reservation.
             let stem = entry.path.file_stem().unwrap_or_default().to_string_lossy();
             let mut suffix = 2;
-            while outputs.contains(&path_key(&absolute_target(&target)?)) {
+            while entry.replacement.is_none()
+                && outputs.contains(&path_key(&absolute_target(&target)?))
+            {
                 target = directory.join(format!("{stem} ({suffix}).cbz"));
                 suffix += 1;
             }
@@ -80,6 +108,7 @@ impl Queue {
             accepted.push(WorkItem {
                 path: entry.path,
                 output: target,
+                overwrite: entry.replacement.is_some(),
                 source_key: source,
                 output_key,
             });
@@ -204,6 +233,81 @@ mod tests {
     use super::*;
 
     #[test]
+    fn replacement_keeps_its_exact_output_and_retry_policy() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("chapter.cbz");
+        std::fs::write(&source, b"source").unwrap();
+        let output = dir.path().join("Translated");
+        std::fs::create_dir(&output).unwrap();
+        let original = output.join("chapter.cbz");
+        let replacement = output.join("chapter (2).cbz");
+        std::fs::write(&original, b"other chapter").unwrap();
+        std::fs::write(&replacement, b"old translation").unwrap();
+        let mut queue = Queue::default();
+        queue
+            .append(vec![BatchEntry {
+                path: source.clone(),
+                output,
+                replacement: Some(replacement.clone()),
+            }])
+            .unwrap();
+        let work = queue.claim().unwrap();
+        assert_eq!(work.output, std::fs::canonicalize(&replacement).unwrap());
+        assert!(work.overwrite);
+        assert_eq!(std::fs::read(&work.output).unwrap(), b"old translation");
+        queue.finish(true);
+        queue.retry(&source).unwrap();
+        let retry = queue.claim().unwrap();
+        assert_eq!(retry.output, work.output);
+        assert!(retry.overwrite);
+        assert_eq!(std::fs::read(original).unwrap(), b"other chapter");
+    }
+
+    #[test]
+    fn replacement_cannot_target_sources_another_folder_or_a_reserved_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.cbz");
+        let b = dir.path().join("b.cbz");
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+        let output = dir.path().join("Translated");
+        let mut queue = Queue::default();
+        for (folder, target) in [
+            (output.clone(), a.clone()),
+            (dir.path().to_owned(), a.clone()),
+        ] {
+            assert!(
+                queue
+                    .append(vec![BatchEntry {
+                        path: a.clone(),
+                        output: folder,
+                        replacement: Some(target)
+                    }])
+                    .is_err()
+            );
+            assert!(queue.paths().is_empty());
+        }
+        let target = output.join("a.cbz");
+        assert!(
+            queue
+                .append(vec![
+                    BatchEntry {
+                        path: a,
+                        output: output.clone(),
+                        replacement: Some(target.clone())
+                    },
+                    BatchEntry {
+                        path: b,
+                        output,
+                        replacement: Some(target)
+                    },
+                ])
+                .is_err()
+        );
+        assert!(queue.paths().is_empty());
+    }
+
+    #[test]
     fn removal_protects_active_work_and_releases_reservations_for_readding() {
         let dir = tempfile::tempdir().unwrap();
         let entries: Vec<_> = ["a.cbz", "b.cbz", "c.cbz"]
@@ -214,6 +318,7 @@ mod tests {
                 BatchEntry {
                     path,
                     output: dir.path().join("out"),
+                    replacement: None,
                 }
             })
             .collect();
@@ -251,6 +356,7 @@ mod tests {
                 BatchEntry {
                     path,
                     output: dir.path().join("out"),
+                    replacement: None,
                 }
             })
             .collect();
@@ -296,6 +402,7 @@ mod tests {
                 BatchEntry {
                     path,
                     output: dir.path().join("Translated"),
+                    replacement: None,
                 }
             })
             .collect();
@@ -331,7 +438,8 @@ mod tests {
             queue
                 .append(vec![BatchEntry {
                     path: left.clone(),
-                    output: a
+                    output: a,
+                    replacement: None,
                 }])
                 .is_err()
         );
@@ -341,10 +449,12 @@ mod tests {
                 BatchEntry {
                     path: left,
                     output: dir.path().join("out"),
+                    replacement: None,
                 },
                 BatchEntry {
                     path: right,
                     output: dir.path().join("out"),
+                    replacement: None,
                 },
             ])
             .unwrap();

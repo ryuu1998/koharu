@@ -179,19 +179,26 @@ export function BatchQueue() {
             if (!chapter) return null
             const focused = index === focusIndex
             const active = path === activePath && ['running', 'exporting'].includes(statuses[path])
-            const done = exported.includes(path)
+            const done = !!exported[path]
             const failed = statuses[path] === 'failed'
-            const caption = done
-              ? 'batch.translated'
-              : active && pauseState !== 'playing' && !stopping
+            const caption =
+              active && pauseState !== 'playing' && !stopping
                 ? 'batch.' + pauseState
                 : stopping && active
                   ? 'batch.stopping'
-                  : statuses[path]
-                    ? `batch.${statuses[path]}`
-                    : focused && !running
-                      ? 'batch.upNext'
-                      : 'batch.waiting'
+                  : active
+                    ? 'batch.running'
+                    : failed
+                      ? 'batch.failed'
+                      : done && !statuses[path] && selected.includes(path)
+                        ? 'batch.retranslateQueued'
+                        : done
+                          ? 'batch.translated'
+                          : statuses[path]
+                            ? `batch.${statuses[path]}`
+                            : focused && !running
+                              ? 'batch.upNext'
+                              : 'batch.waiting'
             const canMove = movable(path, index)
             const target = dragged && dropBefore === path
             const top = 8 + index * 48 + (index > focusIndex ? 88 : 0)
@@ -306,16 +313,16 @@ export function BatchQueue() {
                     <p
                       className={cn(
                         'mt-1 flex items-center gap-1 text-[10px] leading-4',
-                        done
-                          ? 'text-green-700 dark:text-green-300'
-                          : failed
-                            ? 'text-destructive'
-                            : active
-                              ? 'text-primary'
+                        failed
+                          ? 'text-destructive'
+                          : active
+                            ? 'text-primary'
+                            : done
+                              ? 'text-green-700 dark:text-green-300'
                               : 'text-muted-foreground',
                       )}
                     >
-                      {done && (
+                      {done && !active && !failed && (
                         <span
                           className='size-1.5 shrink-0 rounded-full bg-green-600 dark:bg-green-400'
                           aria-hidden='true'

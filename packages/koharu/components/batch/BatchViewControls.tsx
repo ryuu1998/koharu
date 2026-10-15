@@ -28,7 +28,7 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
   const statuses = useBatchStore((s) => s.statuses)
   const running = useBatchStore((s) => s.running)
   const select = useBatchStore((s) => s.select)
-  const pending = source?.chapters.filter((c) => !c.error && !exported.includes(c.path)) ?? []
+  const pending = source?.chapters.filter((c) => !c.error && !exported[c.path]) ?? []
   const allSelected = pending.length > 0 && pending.every((c) => selected.includes(c.path))
   const Direction = descending ? ArrowDown : ArrowUp
   const direction = t(`batch.sort.${sortBy}.${descending ? 'descending' : 'ascending'}`)

@@ -64,6 +64,7 @@ export function BatchPage() {
     exported,
     selected,
   })
+  const replacements = selected.filter((path) => exported[path]).length
 
   const browseSource = async () => {
     if (busy || stopping) return
@@ -170,7 +171,12 @@ export function BatchPage() {
             disabled={!!busy || !selected.length || !output}
             onClick={() => void startBatch().catch(() => undefined)}
           >
-            {t('batch.translate', { count: selected.length })}
+            {t(
+              replacements === selected.length && replacements > 0
+                ? 'batch.retranslate'
+                : 'batch.translate',
+              { count: selected.length },
+            )}
           </Button>
         )}
       </header>
@@ -243,6 +249,9 @@ export function BatchPage() {
           <div className='flex min-h-11 shrink-0 items-center justify-between gap-3 px-4 sm:px-5'>
             <span className='text-[11px] text-muted-foreground tabular-nums'>
               {t('batch.selected', { count: selected.length, total: chapters.length })}
+              {!running && replacements > 0 && (
+                <span className='ms-3'>{t('batch.replacing', { count: replacements })}</span>
+              )}
             </span>
           </div>
           {!running && report && (
@@ -280,24 +289,26 @@ export function BatchPage() {
                 style={{ gridTemplateColumns: `repeat(auto-fill, ${cardSize + 16}px)` }}
               >
                 {chapters.map((chapter) => {
-                  const done = exported.includes(chapter.path)
+                  const done = !!exported[chapter.path]
                   const status = statuses[chapter.path]
                   const failed = !!chapter.error || status === 'failed'
-                  const caption = done
-                    ? status === 'translated'
-                      ? 'batch.translated'
-                      : 'batch.alreadyTranslated'
-                    : failed
-                      ? 'batch.failed'
-                      : status
-                        ? 'batch.' + status
-                        : 'batch.ready'
+                  const caption = failed
+                    ? 'batch.failed'
+                    : status === 'running' || status === 'exporting'
+                      ? `batch.${status}`
+                      : done
+                        ? status === 'translated'
+                          ? 'batch.translated'
+                          : 'batch.alreadyTranslated'
+                        : status
+                          ? 'batch.' + status
+                          : 'batch.ready'
                   return (
                     <label
                       key={chapter.path}
                       className={cn(
                         'group relative flex min-w-0 flex-col rounded-lg p-2',
-                        !busy && !chapter.error && !done && 'cursor-pointer hover:bg-muted/30',
+                        !busy && !chapter.error && 'cursor-pointer hover:bg-muted/30',
                       )}
                       title={[
                         chapter.name,
@@ -327,8 +338,8 @@ export function BatchPage() {
                         )}
                         {done && (
                           <span
-                            className='absolute top-1 left-1 inline-flex max-w-[calc(100%-28px)] items-center gap-1 rounded bg-background/95 px-1 py-0.5 text-[9px] leading-3 font-medium text-green-700 dark:text-green-300'
-                            title={t(caption)}
+                            className='absolute top-1 left-1 inline-flex max-w-[calc(100%_-_28px)] items-center gap-1 rounded bg-background/95 px-1 py-0.5 text-[9px] leading-3 font-medium text-green-700 dark:text-green-300'
+                            title={t('batch.alreadyTranslated')}
                           >
                             <span
                               className='size-1 shrink-0 rounded-full bg-green-600 dark:bg-green-400'
@@ -341,7 +352,6 @@ export function BatchPage() {
                           className={cn(
                             'absolute top-1 right-1 grid size-5 place-items-center rounded',
                             !chapter.error && 'bg-background/95',
-                            done && 'sr-only',
                           )}
                         >
                           <input
@@ -351,8 +361,7 @@ export function BatchPage() {
                               !!busy ||
                               stopping ||
                               (running && queue.includes(chapter.path)) ||
-                              !!chapter.error ||
-                              done
+                              !!chapter.error
                             }
                             aria-label={chapter.name}
                             className='peer sr-only'
@@ -364,7 +373,7 @@ export function BatchPage() {
                               ).catch(() => undefined)
                             }
                           />
-                          {!done && !chapter.error && (
+                          {!chapter.error && (
                             <span
                               aria-hidden='true'
                               className='grid size-3.5 place-items-center rounded-[3px] border border-input text-primary-foreground peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-3 peer-focus-visible:outline-ring [&>svg]:invisible peer-checked:[&>svg]:visible'
@@ -385,19 +394,16 @@ export function BatchPage() {
                       >
                         <span className='line-clamp-2'>{chapter.name.replace(/\.cbz$/i, '')}</span>
                       </span>
-                      <span className='mt-1 text-[10px] leading-4 text-muted-foreground tabular-nums'>
+                      <span className='mt-1 flex items-center gap-1.5 text-[10px] leading-4 text-muted-foreground tabular-nums'>
+                        {failed && (
+                          <TriangleAlert className='size-3 text-destructive' aria-hidden='true' />
+                        )}
                         {t('batch.pages', { count: chapter.pages })}
                       </span>
                       {failed && !done && (
                         <span className='sr-only' title={chapter.error ?? t(caption)}>
                           {t(caption)}
                         </span>
-                      )}
-                      {failed && (
-                        <TriangleAlert
-                          className='absolute top-3 left-3 size-4 text-destructive'
-                          aria-hidden='true'
-                        />
                       )}
                     </label>
                   )

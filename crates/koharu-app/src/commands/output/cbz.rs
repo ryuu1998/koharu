@@ -218,6 +218,30 @@ mod tests {
     use std::io::Cursor;
 
     #[tokio::test]
+    async fn successful_retranslation_replaces_only_the_selected_archive() {
+        let directory = Arc::new(tempfile::tempdir().unwrap());
+        std::fs::write(directory.path().join("page.jpg"), b"new page").unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let target = output.path().join("chapter.cbz");
+        let other = output.path().join("other.cbz");
+        std::fs::write(&target, b"old translation").unwrap();
+        std::fs::write(&other, b"other archive").unwrap();
+        PreparedCbz {
+            directory,
+            pages: vec!["page.jpg".to_owned()],
+        }
+        .write(target.clone(), None, true)
+        .await
+        .unwrap();
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(target).unwrap()).unwrap();
+        let mut page = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_index(0).unwrap(), &mut page).unwrap();
+        assert_eq!(page, b"new page");
+        assert_eq!(std::fs::read(other).unwrap(), b"other archive");
+        assert_eq!(std::fs::read_dir(output.path()).unwrap().count(), 2);
+    }
+
+    #[tokio::test]
     async fn staged_pages_are_published_in_original_order() {
         let directory = Arc::new(tempfile::tempdir().unwrap());
         let names = vec!["0001_page.jpg".to_owned(), "0002_page.jpg".to_owned()];

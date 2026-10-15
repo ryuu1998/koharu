@@ -18,12 +18,18 @@ use super::{Error, import::Format};
 const COMIC_INFO_LIMIT: u64 = 2 * 1024 * 1024;
 const COVER_LIMIT: u64 = 512 * 1024 * 1024;
 
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+pub struct BatchExport {
+    pub source: PathBuf,
+    pub output: PathBuf,
+}
+
 #[derive(Clone, Debug, Serialize, Type)]
 pub struct BatchSource {
     pub path: PathBuf,
     pub default_output: PathBuf,
     pub chapters: Vec<BatchChapter>,
-    pub exported: Vec<PathBuf>,
+    pub exported: Vec<BatchExport>,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -72,11 +78,11 @@ pub(crate) async fn browse_batch_output(
 pub(crate) async fn get_batch_exports(
     chapters: Vec<PathBuf>,
     output: PathBuf,
-) -> std::result::Result<Vec<PathBuf>, Error> {
+) -> std::result::Result<Vec<BatchExport>, Error> {
     Ok(tokio_rayon::spawn(move || exported_chapters(&chapters, &output)).await)
 }
 
-fn exported_chapters(chapters: &[PathBuf], output: &Path) -> Vec<PathBuf> {
+fn exported_chapters(chapters: &[PathBuf], output: &Path) -> Vec<BatchExport> {
     chapters
         .par_iter()
         .filter(|chapter| {
@@ -103,7 +109,10 @@ fn exported_chapters(chapters: &[PathBuf], output: &Path) -> Vec<PathBuf> {
                     .is_some_and(|extension| matches!(extension.parse(), Ok(Format::Raster)))
             })
         })
-        .cloned()
+        .map(|source| BatchExport {
+            source: source.clone(),
+            output: output.join(source.file_name().expect("validated archive filename")),
+        })
         .collect()
 }
 
@@ -282,7 +291,13 @@ mod tests {
         let output = directory.path().join("Translated");
         fs::create_dir(&output).unwrap();
         fs::copy(&source, output.join("chapter.cbz")).unwrap();
-        assert_eq!(exported_chapters(&paths, &output), paths);
+        assert_eq!(
+            exported_chapters(&paths, &output),
+            vec![BatchExport {
+                source,
+                output: output.join("chapter.cbz")
+            }]
+        );
         fs::write(output.join("chapter.cbz"), b"broken").unwrap();
         assert!(exported_chapters(&paths, &output).is_empty());
     }
