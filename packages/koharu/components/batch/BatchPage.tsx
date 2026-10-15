@@ -308,18 +308,18 @@ export function BatchPage() {
                       key={chapter.path}
                       className={cn(
                         'group relative flex min-w-0 flex-col rounded-lg p-2',
-                        !busy && !chapter.error && 'cursor-pointer hover:bg-muted/30',
+                        !busy && !chapter.error && 'cursor-pointer',
                       )}
                       title={[
                         chapter.name,
                         t(caption),
                         t('batch.pages', { count: chapter.pages }),
                         `${(chapter.size / 1048576).toFixed(1)} MB`,
-                      ].join(' Â· ')}
+                      ].join(' · ')}
                       style={{ width: cardSize + 16 }}
                     >
                       <span
-                        className='relative grid shrink-0 place-items-center overflow-hidden rounded bg-[var(--surface-well)]'
+                        className='batch-chapter-cover relative grid shrink-0 place-items-center overflow-hidden rounded-lg bg-[var(--surface-well)]'
                         style={{ width: cardSize, height: (cardSize * 4) / 3 }}
                       >
                         {chapter.thumbnail ? (
@@ -336,24 +336,31 @@ export function BatchPage() {
                             strokeWidth={1.25}
                           />
                         )}
+                        {cardLayout === 'overlay' && (
+                          <>
+                            <span className='batch-chapter-scrim' aria-hidden='true' />
+                            <span className='batch-chapter-title' title={chapter.name}>
+                              <span className='line-clamp-2'>
+                                {chapter.name.replace(/\.cbz$/i, '')}
+                              </span>
+                            </span>
+                          </>
+                        )}
                         {done && (
                           <span
-                            className='absolute top-1 left-1 inline-flex max-w-[calc(100%_-_28px)] items-center gap-1 rounded bg-background/95 px-1 py-0.5 text-[9px] leading-3 font-medium text-green-700 dark:text-green-300'
+                            className='batch-chapter-translated'
                             title={t('batch.alreadyTranslated')}
                           >
                             <span
-                              className='size-1 shrink-0 rounded-full bg-green-600 dark:bg-green-400'
+                              className='size-1 shrink-0 rounded-full bg-[#7cdda0]'
                               aria-hidden='true'
                             />
-                            <span className='truncate'>{t('batch.translated')}</span>
+                            <span className='batch-chapter-translated-label truncate'>
+                              {t('batch.translated')}
+                            </span>
                           </span>
                         )}
-                        <span
-                          className={cn(
-                            'absolute top-1 right-1 grid size-5 place-items-center rounded',
-                            !chapter.error && 'bg-background/95',
-                          )}
-                        >
+                        <span className='absolute top-[3px] right-[3px] grid size-6 place-items-center'>
                           <input
                             type='checkbox'
                             checked={selected.includes(chapter.path)}
@@ -376,25 +383,24 @@ export function BatchPage() {
                           {!chapter.error && (
                             <span
                               aria-hidden='true'
-                              className='grid size-3.5 place-items-center rounded-[3px] border border-input text-primary-foreground peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-3 peer-focus-visible:outline-ring [&>svg]:invisible peer-checked:[&>svg]:visible'
+                              className='grid size-[18px] place-items-center rounded-full border border-white/70 bg-black/40 text-primary-foreground backdrop-blur-md peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-3 peer-focus-visible:outline-ring peer-disabled:opacity-50 [&>svg]:invisible peer-checked:[&>svg]:visible'
                             >
-                              <Check className='size-2.5' strokeWidth={2.5} />
+                              <Check className='size-3' strokeWidth={2.5} />
                             </span>
                           )}
                         </span>
                       </span>
-                      <span
-                        className={cn(
-                          'text-[11px] leading-4 font-medium break-words',
-                          cardLayout === 'overlay'
-                            ? 'pointer-events-none absolute inset-x-2 bottom-7 rounded-b bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1.5 pt-5 pb-1.5 text-white'
-                            : 'mt-1.5 h-8',
-                        )}
-                        title={chapter.name}
-                      >
-                        <span className='line-clamp-2'>{chapter.name.replace(/\.cbz$/i, '')}</span>
-                      </span>
-                      <span className='mt-1 flex items-center gap-1.5 text-[10px] leading-4 text-muted-foreground tabular-nums'>
+                      {cardLayout === 'caption' && (
+                        <span
+                          className='mt-2 h-8 px-0.5 text-[11px] leading-4 font-medium break-words'
+                          title={chapter.name}
+                        >
+                          <span className='line-clamp-2'>
+                            {chapter.name.replace(/\.cbz$/i, '')}
+                          </span>
+                        </span>
+                      )}
+                      <span className='mt-1.5 flex items-center gap-1.5 px-0.5 text-[10px] leading-4 text-muted-foreground tabular-nums'>
                         {failed && (
                           <TriangleAlert className='size-3 text-destructive' aria-hidden='true' />
                         )}
