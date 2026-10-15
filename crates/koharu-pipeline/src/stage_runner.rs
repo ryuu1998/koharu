@@ -20,6 +20,14 @@ pub(crate) struct StageRunner {
 }
 
 impl StageRunner {
+    pub(crate) fn unload(&self) {
+        for stage in Stage::ALL {
+            if self.stages.unload(stage) {
+                tracing::info!(target: "koharu_metrics", metric = "model_unload", stage = %stage);
+            }
+        }
+    }
+
     pub(crate) async fn prefetch_ocr(&self) -> Result<()> {
         self.stages.prefetch_ocr().await
     }

@@ -146,7 +146,6 @@ pub(crate) async fn process_batch(
     request: BatchRequest,
     on_event: Channel<BatchEvent>,
     pipeline: State<'_, Pipeline>,
-    desktop: State<'_, Desktop>,
     batch: State<'_, BatchState>,
     processing: State<'_, Processing>,
 ) -> std::result::Result<BatchReport, Error> {
@@ -170,7 +169,7 @@ pub(crate) async fn process_batch(
         processing: &processing,
         job,
     };
-    Ok(run_chapters(request, pipeline.inner().clone(), &desktop, run).await?)
+    Ok(run_chapters(request, pipeline.inner().clone(), run).await?)
 }
 
 fn current(batch: &BatchState, id: &str) -> Result<Arc<BatchRun>> {
@@ -290,9 +289,11 @@ pub(super) fn prepare(
 pub(super) async fn run_chapters(
     request: BatchRequest,
     pipeline: Pipeline,
-    desktop: &Desktop,
     run: Arc<BatchRun>,
 ) -> Result<BatchReport> {
+    // Batch render resources belong to this run, not the open editor. Dropping
+    // this owner releases its rasterizer, decoded images, nodes, and font cache.
+    let desktop = Desktop::new()?;
     let events = &run.events;
     let stop = &run.stop;
     let mut report = BatchReport::default();
@@ -333,7 +334,7 @@ pub(super) async fn run_chapters(
                 request.jpeg_quality,
                 request.overwrite,
                 &pipeline,
-                desktop,
+                &desktop,
                 stop.clone(),
                 Arc::clone(events),
             )
@@ -377,6 +378,9 @@ pub(super) async fn run_chapters(
     report
         .failures
         .retain(|failure| run.queue.lock().failed(&failure.chapter));
+    drop(desktop);
+    pipeline.unload().await;
+    tracing::info!(batch_id = %run.id, "batch resources released");
     tracing::info!(batch_id = %run.id, completed = report.completed, skipped = report.skipped,
         failed = report.failures.len(), stopped = report.stopped, "batch finished");
     events(BatchEvent::Finished {
