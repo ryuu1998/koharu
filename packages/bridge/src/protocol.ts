@@ -130,7 +130,7 @@ export type BatchEntry = {
 	output: string,
 };
 
-export type BatchEvent = { event: "started"; total_chapters: number } | { event: "queue_changed"; paths: string[] } | { event: "chapter_queued"; path: string } | { event: "chapter_started"; path: string; name: string; pages: number } | { event: "chapter_progress"; path: string; completed_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; path: string } | { event: "chapter_rendered"; path: string; completed_pages: number; total_pages: number } | { event: "chapter_finished"; path: string; output: string } | { event: "chapter_skipped"; path: string; output: string } | { event: "chapter_failed"; path: string; name: string; error: string } | { event: "finished"; report: BatchReport };
+export type BatchEvent = { event: "started"; total_chapters: number } | { event: "queue_changed"; paths: string[] } | { event: "chapter_queued"; path: string } | { event: "chapter_started"; path: string; name: string; pages: number } | { event: "chapter_progress"; path: string; completed_pages: number; active_pages: number; total_pages: number; completed_steps: number; total_steps: number; stage: Stage } | { event: "chapter_exporting"; path: string } | { event: "chapter_rendered"; path: string; completed_pages: number; total_pages: number } | { event: "chapter_finished"; path: string; output: string } | { event: "chapter_skipped"; path: string; output: string } | { event: "chapter_failed"; path: string; name: string; error: string } | { event: "finished"; report: BatchReport };
 
 export type BatchFailure = {
 	chapter: string,

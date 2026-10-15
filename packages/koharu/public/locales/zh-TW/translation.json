@@ -573,6 +573,7 @@
     "running": "Translating",
     "exporting": "Exporting",
     "rendering": "渲染",
+    "activePages": "正在處理: {{count}}",
     "translated": "Translated",
     "skipped": "Skipped existing output",
     "failed": "Failed",

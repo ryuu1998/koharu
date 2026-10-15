@@ -56,6 +56,7 @@ interface BatchStore {
   activePath: string | null
   progress: Extract<BatchEvent, { event: 'chapter_progress' }> | null
   stages: Partial<Record<Stage, number>>
+  stageActivity: Partial<Record<Stage, number>>
   rendering: Extract<BatchEvent, { event: 'chapter_rendered' }> | null
   completedChapters: number
   totalChapters: number
@@ -90,6 +91,7 @@ export const useBatchStore = create<BatchStore>()(
       activePath: null,
       progress: null,
       stages: {},
+      stageActivity: {},
       rendering: null,
       completedChapters: 0,
       totalChapters: 0,
@@ -107,6 +109,8 @@ export const useBatchStore = create<BatchStore>()(
           exported: source.exported,
           report: null,
           progress: null,
+          stages: {},
+          stageActivity: {},
           rendering: null,
           activePath: null,
           queue: [],
@@ -135,6 +139,8 @@ export const useBatchStore = create<BatchStore>()(
           report: null,
           activePath: null,
           progress: null,
+          stages: {},
+          stageActivity: {},
           rendering: null,
           queue: [],
           completedChapters: 0,
@@ -168,6 +174,8 @@ export const useBatchStore = create<BatchStore>()(
           report: null,
           activePath: null,
           progress: null,
+          stages: {},
+          stageActivity: {},
           rendering: null,
         })
       },
@@ -207,6 +215,8 @@ export async function startBatch(): Promise<void> {
     pauseState: 'playing',
     report: null,
     progress: null,
+    stages: {},
+    stageActivity: {},
     rendering: null,
     activePath: null,
     queue: chapters,
@@ -240,6 +250,7 @@ export async function startBatch(): Promise<void> {
         useBatchStore.setState((state) => ({
           progress: event,
           stages: { ...state.stages, [event.stage]: event.completed_pages },
+          stageActivity: { ...state.stageActivity, [event.stage]: event.active_pages },
         }))
       } else if (event.event === 'chapter_rendered') {
         if (useBatchStore.getState().activePath === event.path)
@@ -254,6 +265,7 @@ export async function startBatch(): Promise<void> {
             progress: null,
             rendering: null,
             stages: {},
+            stageActivity: {},
             statuses: { ...state.statuses, [path]: 'running' },
           }))
         } else if (event.event === 'chapter_exporting') {
@@ -307,6 +319,7 @@ export async function startBatch(): Promise<void> {
         runId: null,
         stopping: false,
         pauseState: 'playing',
+        stageActivity: {},
         statuses,
         selected: state.selected.filter((path) => !state.exported.includes(path)),
       }

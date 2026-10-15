@@ -76,6 +76,8 @@ pub enum BatchEvent {
         #[specta(type = f64)]
         completed_pages: usize,
         #[specta(type = f64)]
+        active_pages: usize,
+        #[specta(type = f64)]
         total_pages: usize,
         #[specta(type = f64)]
         completed_steps: usize,
@@ -464,6 +466,7 @@ async fn process_chapter(
         progress_events(BatchEvent::ChapterProgress {
             path: progress_path.clone(),
             completed_pages: current.completed(stage),
+            active_pages: current.active(stage),
             total_pages: count,
             completed_steps: current.finished.len(),
             total_steps: count * Stage::ALL.len(),
@@ -538,13 +541,29 @@ async fn process_chapter(
 #[derive(Default)]
 struct ChapterProgress {
     finished: BTreeSet<(EntityId, Stage)>,
+    active: BTreeSet<(EntityId, Stage)>,
 }
 impl ChapterProgress {
     fn record(&mut self, progress: Progress) {
-        if let Progress::Finished { page, stage, .. } | Progress::Skipped { page, stage } = progress
-        {
-            self.finished.insert((page, stage));
+        match progress {
+            Progress::Loading { page, stage, .. } | Progress::Running { page, stage, .. } => {
+                if !self.finished.contains(&(page, stage)) {
+                    self.active.insert((page, stage));
+                }
+            }
+            Progress::Finished { page, stage, .. } | Progress::Skipped { page, stage } => {
+                self.active.remove(&(page, stage));
+                self.finished.insert((page, stage));
+            }
+            Progress::Started { .. } => {}
         }
+    }
+
+    fn active(&self, stage: Stage) -> usize {
+        self.active
+            .iter()
+            .filter(|(_, active)| *active == stage)
+            .count()
     }
 
     fn completed(&self, stage: Stage) -> usize {
@@ -586,5 +605,29 @@ mod tests {
         });
         assert_eq!(progress.finished.len(), 2);
         assert_eq!(progress.completed(Stage::Detection), 1);
+        assert_eq!(progress.active(Stage::Detection), 0);
+    }
+
+    #[test]
+    fn pending_translations_are_visible_before_any_page_finishes() {
+        let mut progress = ChapterProgress::default();
+        let pages = [EntityId::new(), EntityId::new()];
+        for page in pages {
+            for _ in 0..2 {
+                progress.record(Progress::Running {
+                    page,
+                    stage: Stage::Translation,
+                    model: "cloud".to_owned(),
+                });
+            }
+        }
+        assert_eq!(progress.active(Stage::Translation), 2);
+        assert_eq!(progress.completed(Stage::Translation), 0);
+        progress.record(Progress::Skipped {
+            page: pages[0],
+            stage: Stage::Translation,
+        });
+        assert_eq!(progress.active(Stage::Translation), 1);
+        assert_eq!(progress.completed(Stage::Translation), 1);
     }
 }

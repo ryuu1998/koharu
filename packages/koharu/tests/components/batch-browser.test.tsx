@@ -60,6 +60,7 @@ beforeEach(() => {
     stopping: false,
     pauseState: 'playing',
     stages: {},
+    stageActivity: {},
     rendering: null,
     report: null,
     progress: null,
@@ -277,6 +278,7 @@ describe('batch chapter browser', () => {
         event: 'chapter_progress',
         path: firstPath,
         completed_pages: 12,
+        active_pages: 0,
         total_pages: 12,
         completed_steps: 48,
         total_steps: 48,
@@ -485,10 +487,31 @@ describe('batch chapter browser', () => {
         event: 'chapter_progress',
         path: source.chapters[0].path,
         completed_pages: 8,
+        active_pages: 0,
         total_pages: 32,
         completed_steps: 8,
         total_steps: 128,
         stage: 'detection',
+      })
+      channel.onmessage({
+        event: 'chapter_progress',
+        path: source.chapters[0].path,
+        completed_pages: 6,
+        active_pages: 0,
+        total_pages: 32,
+        completed_steps: 14,
+        total_steps: 128,
+        stage: 'inpainting',
+      })
+      channel.onmessage({
+        event: 'chapter_progress',
+        path: source.chapters[0].path,
+        completed_pages: 0,
+        active_pages: 6,
+        total_pages: 32,
+        completed_steps: 14,
+        total_steps: 128,
+        stage: 'translation',
       })
       channel.onmessage({
         event: 'chapter_rendered',
@@ -518,6 +541,15 @@ describe('batch chapter browser', () => {
       'aria-valuenow',
       '9.375',
     )
+    expect(screen.getByRole('progressbar', { name: 'Inpainting' })).toHaveAttribute(
+      'aria-valuenow',
+      '18.75',
+    )
+    expect(screen.getByRole('progressbar', { name: 'Translation' })).toHaveAttribute(
+      'aria-valuenow',
+      '0',
+    )
+    expect(screen.getByText('Active: 6')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse queue' }))
     expect(screen.getByRole('button', { name: 'Expand queue' })).toHaveAttribute(
       'aria-expanded',
