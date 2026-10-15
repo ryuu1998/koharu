@@ -1,7 +1,6 @@
 'use client'
 
 import {
-  Check,
   Trash2,
   FileArchive,
   GripVertical,
@@ -317,7 +316,12 @@ export function BatchQueue() {
                               : 'text-muted-foreground',
                       )}
                     >
-                      {done && <Check className='size-3 shrink-0' aria-hidden='true' />}
+                      {done && (
+                        <span
+                          className='size-1.5 shrink-0 rounded-full bg-green-600 dark:bg-green-400'
+                          aria-hidden='true'
+                        />
+                      )}
                       {failed && <TriangleAlert className='size-3 shrink-0' aria-hidden='true' />}
                       {failed && errors[path] ? (
                         <button

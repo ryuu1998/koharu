@@ -148,6 +148,25 @@ describe('batch chapter browser', () => {
     })
   })
 
+  it('sorts by live translation status in either direction without reordering the queue', () => {
+    useBatchStore.getState().setSource(sortableSource)
+    const paths = sortableSource.chapters.map((chapter) => chapter.path)
+    useBatchStore.setState({
+      selected: paths,
+      queue: paths,
+      statuses: { [paths[0]]: 'running' },
+      exported: [paths[2]],
+    })
+    const state = useBatchStore.getState()
+    expect(
+      sortBatchChapters(sortableSource.chapters, 'status', false, state).map((c) => c.path),
+    ).toEqual(paths)
+    expect(
+      sortBatchChapters(sortableSource.chapters, 'status', true, state).map((c) => c.path),
+    ).toEqual([...paths].reverse())
+    expect(useBatchStore.getState().queue).toEqual(paths)
+  })
+
   it('keeps completed history in view after the final chapter finishes', () => {
     useBatchStore.getState().setSource(sortableSource)
     const paths = sortableSource.chapters.map((chapter) => chapter.path)
@@ -272,7 +291,9 @@ describe('batch chapter browser', () => {
 
   it('keeps unknown dates last in both directions and uses natural names for tied values', () => {
     const names = (sort: 'added' | 'pages', descending: boolean) =>
-      sortBatchChapters(sortableSource.chapters, sort, descending).map((c) => c.name)
+      sortBatchChapters(sortableSource.chapters, sort, descending, useBatchStore.getState()).map(
+        (c) => c.name,
+      )
     expect(names('added', true)).toEqual(['chapter2.cbz', 'chapter1.cbz', 'chapter10.cbz'])
     expect(names('added', false)).toEqual(['chapter1.cbz', 'chapter2.cbz', 'chapter10.cbz'])
     expect(names('pages', true)).toEqual(['chapter1.cbz', 'chapter10.cbz', 'chapter2.cbz'])

@@ -59,7 +59,11 @@ export function BatchPage() {
   } | null>(null)
   const queue = useBatchStore((s) => s.queue)
   const [busy, setBusy] = useState<'source' | 'output' | null>(null)
-  const chapters = sortBatchChapters(source?.chapters ?? [], sortBy, sortDescending)
+  const chapters = sortBatchChapters(source?.chapters ?? [], sortBy, sortDescending, {
+    statuses,
+    exported,
+    selected,
+  })
 
   const browseSource = async () => {
     if (busy || stopping) return
@@ -331,6 +335,7 @@ export function BatchPage() {
                           className={cn(
                             'absolute top-1 left-1 grid size-5 place-items-center rounded',
                             !chapter.error && 'bg-background/95',
+                            done && 'sr-only',
                           )}
                         >
                           <input
@@ -353,21 +358,13 @@ export function BatchPage() {
                               ).catch(() => undefined)
                             }
                           />
-                          {done ? (
-                            <Check
-                              className='size-4 text-green-700 dark:text-green-300'
-                              strokeWidth={2}
+                          {!done && !chapter.error && (
+                            <span
                               aria-hidden='true'
-                            />
-                          ) : (
-                            !chapter.error && (
-                              <span
-                                aria-hidden='true'
-                                className='grid size-3.5 place-items-center rounded-[3px] border border-input text-primary-foreground peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-3 peer-focus-visible:outline-ring [&>svg]:invisible peer-checked:[&>svg]:visible'
-                              >
-                                <Check className='size-2.5' strokeWidth={2.5} />
-                              </span>
-                            )
+                              className='grid size-3.5 place-items-center rounded-[3px] border border-input text-primary-foreground peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-3 peer-focus-visible:outline-ring [&>svg]:invisible peer-checked:[&>svg]:visible'
+                            >
+                              <Check className='size-2.5' strokeWidth={2.5} />
+                            </span>
                           )}
                         </span>
                       </span>
@@ -375,7 +372,10 @@ export function BatchPage() {
                         className={cn(
                           'text-[11px] leading-4 font-medium break-words',
                           cardLayout === 'overlay'
-                            ? 'pointer-events-none absolute inset-x-2 bottom-2 rounded-b bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1.5 pt-5 pb-1.5 text-white'
+                            ? cn(
+                                'pointer-events-none absolute inset-x-2 rounded-b bg-gradient-to-t from-black/90 via-black/70 to-transparent px-1.5 pt-5 pb-1.5 text-white',
+                                done ? 'bottom-7' : 'bottom-2',
+                              )
                             : 'mt-1.5 h-8',
                         )}
                         title={chapter.name}
@@ -388,9 +388,21 @@ export function BatchPage() {
                       >
                         {chapter.pages}P
                       </span>
-                      {(done || failed) && (
+                      {done && (
+                        <span
+                          className='mt-1 flex items-center gap-1.5 text-[10px] leading-4 font-medium text-green-700 dark:text-green-300'
+                          title={t(caption)}
+                        >
+                          <span
+                            className='size-1.5 shrink-0 rounded-full bg-green-600 dark:bg-green-400'
+                            aria-hidden='true'
+                          />
+                          {t('batch.translated')}
+                        </span>
+                      )}
+                      {failed && !done && (
                         <span className='sr-only' title={chapter.error ?? t(caption)}>
-                          {t(done ? 'batch.translated' : caption)}
+                          {t(caption)}
                         </span>
                       )}
                       {failed && (

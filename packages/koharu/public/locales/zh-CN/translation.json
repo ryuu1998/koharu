@@ -599,6 +599,11 @@
       "choose": "Choose sorting",
       "reverse": "{{direction}}. Reverse order",
       "addedHint": "File creation time. Unavailable dates appear last.",
+      "status": {
+        "label": "翻译状态",
+        "ascending": "正在翻译优先",
+        "descending": "已翻译优先"
+      },
       "added": {
         "label": "Time added",
         "ascending": "Oldest first",

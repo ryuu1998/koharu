@@ -15,7 +15,7 @@ import {
 } from '@koharu/bridge/protocol'
 
 type ChapterStatus = 'running' | 'exporting' | 'translated' | 'skipped' | 'failed' | 'stopped'
-export type BatchSort = 'added' | 'size' | 'pages'
+export type BatchSort = 'added' | 'size' | 'pages' | 'status'
 
 const chapterNames = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
@@ -23,10 +23,21 @@ export function sortBatchChapters(
   chapters: readonly BatchChapter[],
   sortBy: BatchSort,
   descending: boolean,
+  state: Pick<BatchStore, 'statuses' | 'exported' | 'selected'>,
 ): BatchChapter[] {
+  const statusRank = (chapter: BatchChapter) => {
+    const status = state.statuses[chapter.path]
+    if (state.exported.includes(chapter.path) || status === 'translated' || status === 'skipped')
+      return 5
+    if (status === 'failed' || chapter.error) return 4
+    if (status === 'stopped') return 3
+    if (status === 'running' || status === 'exporting') return 0
+    return state.selected.includes(chapter.path) ? 1 : 2
+  }
   return [...chapters].sort((a, b) => {
-    const left = sortBy === 'added' ? a.created_at : a[sortBy]
-    const right = sortBy === 'added' ? b.created_at : b[sortBy]
+    const left = sortBy === 'status' ? statusRank(a) : sortBy === 'added' ? a.created_at : a[sortBy]
+    const right =
+      sortBy === 'status' ? statusRank(b) : sortBy === 'added' ? b.created_at : b[sortBy]
     if (left === null && right !== null) return 1
     if (right === null && left !== null) return -1
     const difference = left !== null && right !== null ? left - right : 0
@@ -287,7 +298,9 @@ export async function startBatch(): Promise<void> {
                 ? { ...state.errors, [path]: event.error }
                 : state.errors,
             exported:
-              status === 'translated' ? [...new Set([...state.exported, path])] : state.exported,
+              status === 'translated' || status === 'skipped'
+                ? [...new Set([...state.exported, path])]
+                : state.exported,
           }))
         }
       }

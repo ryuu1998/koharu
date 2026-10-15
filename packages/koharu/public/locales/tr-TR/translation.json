@@ -599,6 +599,11 @@
       "choose": "Choose sorting",
       "reverse": "{{direction}}. Reverse order",
       "addedHint": "File creation time. Unavailable dates appear last.",
+      "status": {
+        "label": "Çeviri durumu",
+        "ascending": "Önce çevrilenler",
+        "descending": "Önce tamamlananlar"
+      },
       "added": {
         "label": "Time added",
         "ascending": "Oldest first",

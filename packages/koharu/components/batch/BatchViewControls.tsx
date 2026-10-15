@@ -25,6 +25,7 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
   const source = useBatchStore((s) => s.source)
   const selected = useBatchStore((s) => s.selected)
   const exported = useBatchStore((s) => s.exported)
+  const statuses = useBatchStore((s) => s.statuses)
   const running = useBatchStore((s) => s.running)
   const select = useBatchStore((s) => s.select)
   const pending = source?.chapters.filter((c) => !c.error && !exported.includes(c.path)) ?? []
@@ -79,7 +80,11 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
               ? []
               : [
                   ...selected,
-                  ...sortBatchChapters(pending, sortBy, descending)
+                  ...sortBatchChapters(pending, sortBy, descending, {
+                    statuses,
+                    exported,
+                    selected,
+                  })
                     .filter((c) => !selected.includes(c.path))
                     .map((c) => c.path),
                 ],
@@ -114,7 +119,7 @@ export function BatchViewControls({ busy }: { busy: boolean }) {
             <ChevronDown className='size-3.5' strokeWidth={1.75} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='w-48'>
-            {(['added', 'size', 'pages'] as const).map((field: BatchSort) => (
+            {(['added', 'size', 'pages', 'status'] as const).map((field: BatchSort) => (
               <DropdownMenuItem
                 key={field}
                 className='justify-between text-xs'
