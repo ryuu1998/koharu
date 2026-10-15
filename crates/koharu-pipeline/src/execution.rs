@@ -1,16 +1,12 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-    time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 
 use anyhow::{Context as _, Result, ensure};
 use futures::{StreamExt as _, stream::FuturesUnordered};
 use koharu_scene::{EntityId, Snapshot};
 
 use crate::{
-    Committer, ErrorKind, PipelineError, Progress, ProgressSink, Report, Request, RunStatus, Stage,
-    StageOutput, StopToken,
+    Committer, ErrorKind, PipelineError, Progress, ProgressSink, Report, Request, RunControl,
+    RunStatus, Stage, StageOutput,
     images::ImageCache,
     progress,
     resources::ResourceMonitor,
@@ -24,18 +20,18 @@ pub(crate) struct Execution<'a> {
     runner: Arc<StageRunner>,
     resources: Arc<ResourceMonitor>,
     committer: &'a mut dyn Committer,
-    stop: StopToken,
+    stop: RunControl,
     progress: Option<ProgressSink>,
     scope: NormalizedScope,
     scheduler: Scheduler,
     scene: Snapshot,
-    images: BTreeMap<EntityId, Arc<ImageCache>>,
-    busy_stages: BTreeSet<Stage>,
+    images: Arc<ImageCache>,
     completed: usize,
     failure: Option<PipelineError>,
     base: koharu_scene::Revision,
     started: Instant,
     inpainting_mask: Option<crate::InpaintingMask>,
+    prefetch_ocr: bool,
 }
 
 impl<'a> Execution<'a> {
@@ -72,6 +68,9 @@ impl<'a> Execution<'a> {
             },
         );
 
+        let scheduler = Scheduler::new(&pages, &stages, |stage| runner.parallelism(stage));
+        let prefetch_ocr =
+            stages.contains(&Stage::Detection) && stages.contains(&Stage::Ocr) && !pages.is_empty();
         Ok(Self {
             runner,
             resources,
@@ -79,19 +78,39 @@ impl<'a> Execution<'a> {
             stop: request.stop,
             progress: request.progress,
             scope,
-            scheduler: Scheduler::new(&pages, &stages),
+            scheduler,
             scene: snapshot,
-            images: BTreeMap::new(),
-            busy_stages: BTreeSet::new(),
+            images: Arc::new(ImageCache::default()),
             completed: 0,
             failure: None,
             base,
             started,
             inpainting_mask: request.inpainting_mask,
+            prefetch_ocr,
         })
     }
 
-    pub(crate) async fn run(mut self) -> std::result::Result<Report, PipelineError> {
+    pub(crate) async fn run(self) -> std::result::Result<Report, PipelineError> {
+        if !self.prefetch_ocr || self.stopped() {
+            return self.run_stages().await;
+        }
+        let runner = self.runner.clone();
+        let execution = self.run_stages();
+        tokio::pin!(execution);
+        // Preparation downloads files only; GPU activation stays inside the normal lane.
+        // Dropping this scoped future cancels unfinished preparation when execution ends.
+        tokio::select! {
+            result = &mut execution => result,
+            prepared = runner.prefetch_ocr() => {
+                if let Err(error) = prepared {
+                    tracing::debug!(%error, "OCR preparation failed; the normal loader will report any failure");
+                }
+                execution.await
+            }
+        }
+    }
+
+    async fn run_stages(mut self) -> std::result::Result<Report, PipelineError> {
         if self.stopped() {
             return Ok(self.report(RunStatus::Stopped));
         }
@@ -107,13 +126,18 @@ impl<'a> Execution<'a> {
             }
 
             let Some(completion) = running.next().await else {
+                if self.stop.paused() && !self.stopped() && self.failure.is_none() {
+                    self.stop.ready().await;
+                    continue;
+                }
                 break;
             };
-            self.busy_stages.remove(&completion.stage);
             if self.stopped() || self.failure.is_some() {
                 continue;
             }
             if let Err(error) = self.apply_completion(completion).await {
+                tracing::error!(stage = ?error.stage, kind = ?error.kind,
+                    "pipeline failed; draining in-flight work before reporting the chapter failure");
                 self.failure = Some(error);
             }
         }
@@ -122,16 +146,10 @@ impl<'a> Execution<'a> {
     }
 
     fn take_ready_job(&mut self) -> Option<StageJob> {
-        if self.stopped() || self.failure.is_some() {
+        if self.stopped() || self.stop.paused() || self.failure.is_some() {
             return None;
         }
-        let (page, stage) = self.scheduler.start_next(&self.busy_stages)?;
-        self.busy_stages.insert(stage);
-        let images = self
-            .images
-            .entry(page)
-            .or_insert_with(|| Arc::new(ImageCache::default()))
-            .clone();
+        let (page, stage) = self.scheduler.start_next()?;
         Some(StageJob::new(
             stage,
             StageInput::new(
@@ -139,11 +157,12 @@ impl<'a> Execution<'a> {
                 page,
                 self.scope.entities(),
                 self.scope.region(page),
-                images,
+                self.images.clone(),
                 self.inpainting_mask
                     .as_ref()
                     .filter(|mask| stage == Stage::Inpainting && mask.page == page)
                     .cloned(),
+                self.stop.clone(),
             ),
             self.stop.clone(),
             self.progress.clone(),
@@ -217,9 +236,7 @@ impl<'a> Execution<'a> {
     }
 
     fn mark_complete(&mut self, page: EntityId, stage: Stage) {
-        if self.scheduler.complete_stage(page, stage) {
-            self.images.remove(&page);
-        }
+        self.scheduler.complete_stage(page, stage);
         self.completed += 1;
     }
 

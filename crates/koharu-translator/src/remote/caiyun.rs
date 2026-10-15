@@ -48,6 +48,7 @@ pub(super) async fn translate(
                 detect: true,
                 media: "text",
             }),
+        super::http_disposition,
     )
     .await?;
     if response.rc != 0 {

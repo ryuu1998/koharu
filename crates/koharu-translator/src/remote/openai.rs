@@ -26,6 +26,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let response: ModelsResponse = send_json(
         "openai",
         client.get(MODELS_URL).bearer_auth(api_key.expose_secret()),
+        disposition,
     )
     .await?;
     Ok(response
@@ -125,6 +126,7 @@ pub(super) async fn translate(
             .post(URL)
             .bearer_auth(api_key.expose_secret())
             .json(&body),
+        disposition,
     )
     .await?;
     let text = response
@@ -221,6 +223,28 @@ struct ListedModel {
     id: String,
 }
 
+// OpenAI's compatible endpoints share this structured error envelope.
+pub(super) fn disposition(
+    status: reqwest::StatusCode,
+    body: &serde_json::Value,
+) -> super::Disposition {
+    let quota = [body.pointer("/error/code"), body.pointer("/error/type")]
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .any(|code| {
+            matches!(
+                code,
+                "insufficient_quota" | "billing_hard_limit_reached" | "usage_limit_reached"
+            )
+        });
+    if quota {
+        super::Disposition::Quota
+    } else {
+        super::http_disposition(status, body)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,5 +296,27 @@ mod tests {
         assert_eq!(value["reasoning_effort"], "none");
         assert_eq!(value["response_format"]["type"], "json_schema");
         assert_eq!(value["response_format"]["json_schema"]["strict"], true);
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    #[test]
+    fn classifies_provider_errors() {
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &serde_json::json!({"error":{"code":"insufficient_quota"}})
+            ),
+            super::super::Disposition::Quota
+        );
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &serde_json::json!({"error":{"code":"rate_limit_exceeded"}})
+            ),
+            super::super::Disposition::Retry(None)
+        );
     }
 }

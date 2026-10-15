@@ -1,7 +1,5 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use koharu_runtime::RunControl;
+use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -65,7 +63,7 @@ impl Operation {
 pub struct Request {
     pub operation: Operation,
     pub scope: Scope,
-    pub stop: StopToken,
+    pub stop: RunControl,
     pub progress: Option<ProgressSink>,
     pub inpainting_mask: Option<InpaintingMask>,
 }
@@ -75,23 +73,9 @@ impl Default for Request {
         Self {
             operation: Operation::Full,
             scope: Scope::Project,
-            stop: StopToken::default(),
+            stop: RunControl::default(),
             progress: None,
             inpainting_mask: None,
         }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct StopToken(Arc<AtomicBool>);
-
-impl StopToken {
-    pub fn stop(&self) {
-        self.0.store(true, Ordering::Release);
-    }
-
-    #[must_use]
-    pub fn stopped(&self) -> bool {
-        self.0.load(Ordering::Acquire)
     }
 }

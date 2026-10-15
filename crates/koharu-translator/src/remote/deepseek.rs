@@ -28,6 +28,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     let response: ModelsResponse = send_json(
         "deepseek",
         client.get(MODELS_URL).bearer_auth(api_key.expose_secret()),
+        super::http_disposition,
     )
     .await?;
     Ok(response
@@ -52,46 +53,14 @@ pub(super) async fn translate(
     request: &TranslationRequest,
 ) -> Result<Vec<String>> {
     let api_key = koharu_secrets::get("deepseek")?.context("deepseek API key is not configured")?;
-    let (system, user) = prompt::prompts(request)?;
-    let user_content = match request.image.as_deref() {
-        Some(image) => MessageContent::Parts(vec![
-            ContentPart::Text { text: user },
-            ContentPart::ImageUrl {
-                image_url: ImageUrl {
-                    url: encode_image(image)?.data_url(),
-                },
-            },
-        ]),
-        None => MessageContent::Text(user),
-    };
-    let body = ChatRequest {
-        model,
-        messages: [
-            Message {
-                role: "system",
-                content: MessageContent::Text(system),
-            },
-            Message {
-                role: "user",
-                content: user_content,
-            },
-        ],
-        temperature: generation.temperature.or(Some(1.3)),
-        top_p: generation.top_p,
-        max_tokens: generation.max_tokens,
-        thinking: generation.reasoning.map(|enabled| ThinkingConfig {
-            kind: if enabled { "enabled" } else { "disabled" },
-        }),
-        response_format: ResponseFormat {
-            kind: "json_object",
-        },
-    };
+    let body = ChatRequest::new(model, generation, request)?;
     let response: ChatResponse = send_json(
         "deepseek",
         client
             .post(URL)
             .bearer_auth(api_key.expose_secret())
             .json(&body),
+        super::http_disposition,
     )
     .await?;
     let text = response
@@ -105,12 +74,63 @@ pub(super) async fn translate(
     Ok(prompt::translations("deepseek", &text, &request.segments)?)
 }
 
+impl<'a> ChatRequest<'a> {
+    fn new(
+        model: &'a str,
+        generation: &GenerationConfig,
+        request: &TranslationRequest,
+    ) -> anyhow::Result<Self> {
+        let (mut system, user) = prompt::prompts(request)?;
+        // DeepSeek JSON mode needs an explicit output example to avoid blank output.
+        system.push_str("\n\nExample JSON output: ");
+        system.push_str(r#"{"translations":[{"id":0,"text":"translated text"}]}"#);
+        let user_content = match request.image.as_deref() {
+            Some(image) => MessageContent::Parts(vec![
+                ContentPart::Text { text: user },
+                ContentPart::ImageUrl {
+                    image_url: ImageUrl {
+                        url: encode_image(image)?.data_url(),
+                    },
+                },
+            ]),
+            None => MessageContent::Text(user),
+        };
+        Ok(Self {
+            model,
+            messages: [
+                Message {
+                    role: "system",
+                    content: MessageContent::Text(system),
+                },
+                Message {
+                    role: "user",
+                    content: user_content,
+                },
+            ],
+            temperature: generation.temperature.or(Some(1.3)),
+            top_p: generation.top_p,
+            max_tokens: generation.max_tokens,
+            // Omission enables provider-side thinking, including when capability
+            // filtering cleared an unset model flag. Keep fast translation explicit.
+            thinking: ThinkingConfig {
+                kind: if generation.reasoning.unwrap_or(false) {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
+            },
+            response_format: ResponseFormat {
+                kind: "json_object",
+            },
+        })
+    }
+}
+
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
     messages: [Message; 2],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    thinking: Option<ThinkingConfig>,
+    thinking: ThinkingConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     response_format: ResponseFormat,
@@ -187,6 +207,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn keeps_thinking_explicit_when_model_capabilities_clear_the_setting() {
+        let selection = crate::ModelSelection {
+            provider: Provider::DeepSeek,
+            model: Some("deepseek-v4-flash".to_owned()),
+            quantization: None,
+            vision: false,
+            reasoning: false,
+        };
+        let generation = GenerationConfig::default().for_model(&selection);
+        assert_eq!(generation.reasoning, None);
+        let request = TranslationRequest::new(["hello".to_owned()], crate::Language::English);
+        for (reasoning, expected) in [
+            (generation.reasoning, "disabled"),
+            (Some(false), "disabled"),
+            (Some(true), "enabled"),
+        ] {
+            let generation = GenerationConfig {
+                reasoning,
+                ..generation
+            };
+            let body = ChatRequest::new("deepseek-v4-flash", &generation, &request).unwrap();
+            let value = serde_json::to_value(body).unwrap();
+            assert_eq!(value["thinking"]["type"], expected);
+            let system = value["messages"][0]["content"].as_str().unwrap();
+            let example = system.split_once("Example JSON output: ").unwrap().1;
+            let output = prompt::translations("deepseek", example, &request.segments).unwrap();
+            assert_eq!(output, ["translated text"]);
+        }
+    }
+
+    #[test]
     fn serializes_deepseek_request_contract() {
         let body = ChatRequest {
             model: "deepseek-v4-pro",
@@ -200,7 +251,7 @@ mod tests {
                     content: MessageContent::Text("translate".to_owned()),
                 },
             ],
-            thinking: Some(ThinkingConfig { kind: "disabled" }),
+            thinking: ThinkingConfig { kind: "disabled" },
             max_tokens: Some(1024),
             response_format: ResponseFormat {
                 kind: "json_object",

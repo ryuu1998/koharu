@@ -29,7 +29,7 @@ pub(super) async fn models(client: &Client) -> Result<Vec<Model>> {
     url.query_pairs_mut()
         .append_pair("key", api_key.expose_secret())
         .append_pair("pageSize", "1000");
-    let response: ModelsResponse = send_json("gemini", client.get(url)).await?;
+    let response: ModelsResponse = send_json("gemini", client.get(url), disposition).await?;
     Ok(response
         .models
         .into_iter()
@@ -116,7 +116,7 @@ pub(super) async fn translate(
             response_json_schema: schema,
         },
     };
-    let response: Response = send_json("gemini", client.post(url).json(&body)).await?;
+    let response: Response = send_json("gemini", client.post(url).json(&body), disposition).await?;
     let text = response
         .candidates
         .into_iter()
@@ -236,6 +236,43 @@ struct ListedModel {
     thinking: bool,
 }
 
+pub(super) fn disposition(
+    status: reqwest::StatusCode,
+    body: &serde_json::Value,
+) -> super::Disposition {
+    let details = body
+        .pointer("/error/details")
+        .and_then(serde_json::Value::as_array);
+    let daily = details
+        .into_iter()
+        .flatten()
+        .filter_map(|detail| {
+            detail
+                .get("violations")
+                .and_then(serde_json::Value::as_array)
+        })
+        .flatten()
+        .filter_map(|violation| violation.get("quotaId").and_then(serde_json::Value::as_str))
+        .any(|id| {
+            let id = id.to_ascii_lowercase();
+            id.contains("perday") || id.contains("per_day")
+        });
+    if daily {
+        return super::Disposition::Quota;
+    }
+    let policy = super::http_disposition(status, body);
+    if matches!(policy, super::Disposition::Retry(_)) {
+        let delay = details
+            .into_iter()
+            .flatten()
+            .filter_map(|detail| detail.get("retryDelay").and_then(serde_json::Value::as_str))
+            .filter_map(|delay| delay.strip_suffix('s')?.parse::<f64>().ok())
+            .find_map(|seconds| std::time::Duration::try_from_secs_f64(seconds).ok());
+        return super::Disposition::Retry(delay);
+    }
+    policy
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,5 +361,27 @@ mod tests {
         .unwrap();
         assert!(response.models[0].thinking);
         assert!(!response.models[1].thinking);
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    #[test]
+    fn classifies_provider_errors() {
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &serde_json::json!({"error":{"details":[{"violations":[{"quotaId":"RequestsPerDay"}]}]}})
+            ),
+            super::super::Disposition::Quota
+        );
+        assert_eq!(
+            disposition(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &serde_json::json!({"error":{"details":[{"retryDelay":"1.5s"}]}})
+            ),
+            super::super::Disposition::Retry(Some(std::time::Duration::from_millis(1500)))
+        );
     }
 }

@@ -86,7 +86,8 @@ pub(super) async fn translate(
         Some(api_key) => http.bearer_auth(api_key.expose_secret()),
         None => http,
     };
-    let response: ChatResponse = send_json("openai-compatible", http).await?;
+    let response: ChatResponse =
+        send_json("openai-compatible", http, super::openai::disposition).await?;
     let text = response
         .choices
         .into_iter()
@@ -109,7 +110,8 @@ pub(super) async fn models(client: &Client, config: &OpenAiCompatibleConfig) -> 
         Some(api_key) => request.bearer_auth(api_key.expose_secret()),
         None => request,
     };
-    let response: ModelsResponse = send_json("openai-compatible", request).await?;
+    let response: ModelsResponse =
+        send_json("openai-compatible", request, super::openai::disposition).await?;
     Ok(response
         .data
         .into_iter()

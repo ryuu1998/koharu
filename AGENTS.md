@@ -8,6 +8,7 @@ Document only durable, repository-specific constraints here. Do not record curre
 - Prefer a coherent ownership redesign over aliases, forwarding layers, compatibility parsers, or cosmetic renaming.
 - Keep responsibilities self-contained. Defaults and provider-specific behavior belong to the component that owns them rather than a central list of special cases.
 - Remove dead abstractions and one-use helpers when direct code is clearer.
+- Deliver each complete, coherent feature in one PR. Use focused commits during development, and keep unrelated features in separate PRs rather than splitting one feature across a stack of implementation-layer PRs.
 
 ## Source Boundaries
 

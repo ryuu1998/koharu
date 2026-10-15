@@ -138,6 +138,7 @@ const preferences: Preferences = {
     detection: { model: 'koharu-layout-rfdetr-seg-2xl' },
     ocr: { model: 'paddleocr-vl-1.6' },
     translation: {
+      remote: { concurrency: 6 },
       model: {
         provider: 'local',
         model: 'gemma4-e2b-it',
@@ -244,7 +245,7 @@ function render(ui: ReactNode) {
 }
 
 function SettingsNavigationHarness() {
-  const settingsOpen = useKoharuStore((state) => state.settingsOpen)
+  const settingsOpen = useKoharuStore((state) => state.workspace === 'settings')
   return settingsOpen ? <SettingsPage /> : <CanvasCommandBar />
 }
 
@@ -360,10 +361,12 @@ describe('greenfield editor', () => {
       expect(screen.queryByRole('complementary', { name: 'Activity' })).not.toBeInTheDocument()
       await user.click(screen.getByRole('menuitem', { name: 'File' }))
       await user.hover(await screen.findByRole('menuitem', { name: 'Export Project' }))
-      fireEvent.click(await screen.findByRole('menuitem', { name: `${format.toUpperCase()}…` }))
+      fireEvent.click(
+        await screen.findByRole('menuitem', { name: `Entire project as ${format.toUpperCase()}…` }),
+      )
 
       expect(await screen.findByRole('status')).toHaveTextContent('Export Project')
-      expect(exportProject).toHaveBeenCalledExactlyOnceWith(format)
+      expect(exportProject).toHaveBeenCalledExactlyOnceWith({ kind: 'entire_project', format })
       await user.click(screen.getByRole('menuitem', { name: 'File' }))
       expect(await screen.findByRole('menuitem', { name: 'Export Project' })).toHaveAttribute(
         'aria-disabled',
@@ -383,7 +386,12 @@ describe('greenfield editor', () => {
 
   it.each([
     { command: 'import', menu: 'Import Pages', choice: 'Files…', pending: 'Importing pages…' },
-    { command: 'export', menu: 'Export Project', choice: 'CBZ…', pending: 'Export Project' },
+    {
+      command: 'export',
+      menu: 'Export Project',
+      choice: 'Entire project as CBZ…',
+      pending: 'Export Project',
+    },
   ] as const)(
     'clears $command activity after failure',
     async ({ command, menu, choice, pending }) => {
@@ -419,6 +427,24 @@ describe('greenfield editor', () => {
       )
     },
   )
+
+  it('exports the current page independently of the whole project', async () => {
+    const user = userEvent.setup()
+    installProject()
+    const exportPage = vi.spyOn(commands, 'export').mockResolvedValue(null)
+    render(<TitleBar />)
+    await user.click(screen.getByRole('menuitem', { name: 'File' }))
+    await user.hover(await screen.findByRole('menuitem', { name: 'Export Project' }))
+    expect(await screen.findByRole('group', { name: 'Current page' })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'PNG…' }))
+    await waitFor(() =>
+      expect(exportPage).toHaveBeenCalledExactlyOnceWith({
+        kind: 'current_page',
+        page: 'page',
+        format: 'png',
+      }),
+    )
+  })
 
   it('opens community links through the Tauri opener plugin', async () => {
     nativeOpenUrl.mockClear()
@@ -1061,7 +1087,7 @@ describe('greenfield editor', () => {
     expect(screen.getByRole('button', { name: /Stages 4 stages/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Output English/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(useKoharuStore.getState().settingsOpen).toBe(true)
+    expect(useKoharuStore.getState().workspace === 'settings').toBe(true)
   })
 
   it('configures translation output from the runtime selector', async () => {
@@ -1149,7 +1175,7 @@ describe('greenfield editor', () => {
     await user.click(screen.getByRole('combobox', { name: 'Target language' }))
     await user.click(await screen.findByRole('option', { name: 'Japanese' }))
 
-    act(() => useKoharuStore.getState().setSettingsOpen(true))
+    act(() => useKoharuStore.getState().setWorkspace('settings'))
     await waitFor(() => expect(save).toHaveBeenCalled())
     await user.click(screen.getByRole('button', { name: 'Back to editor' }))
     await user.click(screen.getByRole('button', { name: 'Processing settings' }))
@@ -1320,7 +1346,7 @@ describe('greenfield editor', () => {
   it('edits and persists pipeline and translation preferences from the settings page', async () => {
     installProject()
     const user = userEvent.setup()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(preferences)
     render(
       <ThemeProvider attribute='class'>
@@ -1408,6 +1434,44 @@ describe('greenfield editor', () => {
     )
   })
 
+  it('bounds and persists cloud request concurrency', async () => {
+    installProject()
+    const configured: Preferences = {
+      ...preferences,
+      pipeline: {
+        ...preferences.pipeline,
+        translation: {
+          ...preferences.pipeline.translation,
+          model: {
+            ...preferences.pipeline.translation.model,
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+          },
+        },
+      },
+    }
+    useKoharuStore.setState({ workspace: 'settings', preferences: configured })
+    const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(configured)
+    render(
+      <ThemeProvider attribute='class'>
+        <SettingsPage />
+      </ThemeProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Translation' }))
+    const concurrency = screen.getByRole('spinbutton', { name: 'Simultaneous requests' })
+    expect(concurrency).toHaveValue(6)
+    fireEvent.change(concurrency, { target: { value: '99' } })
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          translation: expect.objectContaining({ remote: { concurrency: 16 } }),
+        }),
+        configured.providers,
+        configured.typesetting,
+      ),
+    )
+  })
+
   it('keeps generation controls independent from model capabilities', async () => {
     installProject()
     const user = userEvent.setup()
@@ -1432,7 +1496,7 @@ describe('greenfield editor', () => {
       },
     }
     useKoharuStore.setState({
-      settingsOpen: true,
+      workspace: 'settings',
       preferences: configured,
       translationModels: [
         {
@@ -1519,7 +1583,7 @@ describe('greenfield editor', () => {
   it('preserves a credential draft and focus when autosave finishes', async () => {
     installProject()
     const user = userEvent.setup()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     const save = vi
       .spyOn(commands, 'savePreferences')
       .mockImplementation(async (pipeline, providers, typesetting) => ({
@@ -1555,7 +1619,7 @@ describe('greenfield editor', () => {
 
   it('clamps a threshold typed past its bounds before saving it', async () => {
     installProject()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     const save = vi.spyOn(commands, 'savePreferences').mockResolvedValue(preferences)
     render(
       <ThemeProvider attribute='class'>
@@ -1597,7 +1661,7 @@ describe('greenfield editor', () => {
       },
     }
     useKoharuStore.setState({
-      settingsOpen: true,
+      workspace: 'settings',
       preferences: configured,
       translationModels: [
         ...useKoharuStore.getState().translationModels,
@@ -1648,7 +1712,7 @@ describe('greenfield editor', () => {
     })
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
     await waitFor(() => {
-      expect(useKoharuStore.getState().settingsOpen).toBe(false)
+      expect(useKoharuStore.getState().workspace === 'settings').toBe(false)
       expect(useKoharuStore.getState().preferences?.pipeline.translation.model).toMatchObject({
         provider: 'openrouter',
         model: 'openrouter/auto',
@@ -1659,7 +1723,7 @@ describe('greenfield editor', () => {
   it('adds and removes default font families from typesetting settings', async () => {
     installProject()
     const user = userEvent.setup()
-    useKoharuStore.setState({ settingsOpen: true })
+    useKoharuStore.setState({ workspace: 'settings' })
     queryClient.setQueryData(fontsKey, [
       {
         name: 'Noto Sans',

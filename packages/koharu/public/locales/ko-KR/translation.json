@@ -261,7 +261,9 @@
     "selectAllLayers": "모든 레이어 선택",
     "settings": "설정",
     "undo": "실행 취소",
-    "view": "보기"
+    "view": "보기",
+    "exportCurrentPage": "Current page",
+    "exportProjectFormat": "Entire project as {{format}}"
   },
   "model": {
     "baseUrl": "기본 URL",
@@ -298,7 +300,10 @@
     "rename": "이름 바꾸기",
     "renameDescription": "이 페이지의 새 이름을 정하세요.",
     "renameTitle": "페이지 이름 바꾸기",
-    "selected": "{{count}}개 선택됨"
+    "selected": "{{count}}개 선택됨",
+    "dropTitle": "Drop pages here",
+    "dropActive": "Release to import",
+    "dropDescription": "Images, archives, PDF, or folders"
   },
   "outputPicker": {
     "instructions": "번역 지침",
@@ -447,7 +452,10 @@
       "targetLanguageDescription": "텍스트를 번역할 언어를 선택합니다.",
       "title": "번역",
       "translationModel": "번역 모델",
-      "translationModelDescription": "텍스트 번역에 사용할 모델을 선택합니다."
+      "translationModelDescription": "텍스트 번역에 사용할 모델을 선택합니다.",
+      "requests": "Cloud requests",
+      "concurrency": "Simultaneous requests",
+      "concurrencyDescription": "Maximum requests in flight. Temporary throttling lowers this limit automatically."
     },
     "typesetting": {
       "addFamily": "글꼴 패밀리 추가",
@@ -532,5 +540,112 @@
     "maximize": "최대화",
     "minimize": "최소화",
     "restore": "복원"
+  },
+  "batch": {
+    "tab": "Batch",
+    "title": "Batch translation",
+    "folders": "Batch folders",
+    "source": "Import folder",
+    "output": "Output folder",
+    "chooseSource": "Choose source folder",
+    "chooseOutput": "Choose export folder",
+    "choose": "Choose",
+    "chapters": "Chapters",
+    "selected": "{{count}} selected of {{total}}",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "emptyTitle": "Choose your chapters",
+    "emptyHint": "Select a folder containing CBZ chapters to see their covers and choose what to translate.",
+    "emptyFolder": "No CBZ chapters found",
+    "emptyFolderHint": "Choose another folder. Only CBZ files in this folder are included.",
+    "ready": "Ready",
+    "pages": "{{count}} pages",
+    "translate": "Translate {{count}} chapters",
+    "retranslate_one": "{{count}}개 챕터 다시 번역",
+    "retranslate_other": "{{count}}개 챕터 다시 번역",
+    "replacing_one": "기존 출력 {{count}}개를 교체합니다",
+    "replacing_other": "기존 출력 {{count}}개를 교체합니다",
+    "retranslateQueued": "재번역 대기 중",
+    "translate_one": "Translate {{count}} chapter",
+    "translate_other": "Translate {{count}} chapters",
+    "progress": "Batch progress",
+    "chapterProgress": "Chapter progress",
+    "pageProgress": "{{count}} / {{total}} pages",
+    "chapterCount": "{{count}} / {{total}} chapters",
+    "starting": "Starting batch",
+    "stopping": "Stopping…",
+    "stopped": "Stopped.",
+    "running": "Translating",
+    "exporting": "Exporting",
+    "rendering": "렌더링",
+    "activePages": "진행 중: {{count}}",
+    "translated": "Translated",
+    "skipped": "Skipped existing output",
+    "failed": "Failed",
+    "retry": "다시 시도",
+    "retryChapter": "{{chapter}} 다시 시도",
+    "showError": "{{chapter}} 오류 보기",
+    "chapterFailed": "챕터 처리 실패",
+    "summary": "{{completed}} translated, {{skipped}} skipped, {{failed}} failed.",
+    "alreadyTranslated": "Already translated",
+    "toolbar": "Batch toolbar",
+    "cards": "Cards",
+    "cardSize": "Card size",
+    "unknownDate": "Unknown date",
+    "queue": "Queue",
+    "queueChapters": "Selected chapter queue",
+    "showQueue": "Expand queue",
+    "hideQueue": "Collapse queue",
+    "followActive": "Return to active",
+    "upNext": "Up next",
+    "waiting": "In queue",
+    "sort": {
+      "label": "Sort chapters",
+      "choose": "Choose sorting",
+      "reverse": "{{direction}}. Reverse order",
+      "addedHint": "File creation time. Unavailable dates appear last.",
+      "status": {
+        "label": "번역 상태",
+        "ascending": "번역 중 먼저",
+        "descending": "번역 완료 먼저"
+      },
+      "added": {
+        "label": "Time added",
+        "ascending": "Oldest first",
+        "descending": "Newest first"
+      },
+      "size": {
+        "label": "File size",
+        "ascending": "Smallest first",
+        "descending": "Largest first"
+      },
+      "pages": {
+        "label": "Page count",
+        "ascending": "Fewest pages first",
+        "descending": "Most pages first"
+      }
+    },
+    "layout": {
+      "caption": "Show titles below covers",
+      "overlay": "Show titles on covers"
+    },
+    "pause": "Pause",
+    "pausing": "Pausing…",
+    "paused": "Paused",
+    "resume": "Resume",
+    "stageProgress": "Chapter stages",
+    "removeFromQueue": "대기열에서 {{chapter}} 제거",
+    "dragToReorder": "Drag to reorder",
+    "addArchives": "Add archives",
+    "useCurrentOutput": "Current output folder",
+    "useImportOutput": "This import’s output folder",
+    "otherOutput": "Choose another folder",
+    "adding": "Adding…",
+    "addCount": "Add {{count}} chapters",
+    "addRemaining": "Add remaining",
+    "noNewArchives": "These archives are already in your library.",
+    "noReadableArchives": "No readable CBZ archives in this folder.",
+    "addCount_one": "Add {{count}} chapter",
+    "addCount_other": "Add {{count}} chapters"
   }
 }
