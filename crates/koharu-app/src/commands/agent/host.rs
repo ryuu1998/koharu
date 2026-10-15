@@ -117,6 +117,7 @@ impl KoharuHost {
     }
 
     async fn run_pipeline(&self, arguments: RunPipeline, control: &Control) -> Result<Invocation> {
+        let pipeline = crate::app::inference(&self.handle)?;
         let scope = arguments.scope()?;
         let operation = arguments.operation.into();
         let snapshot = self
@@ -155,11 +156,7 @@ impl KoharuHost {
             progress: None,
             inpainting_mask: None,
         };
-        let result = self
-            .handle
-            .state::<koharu_pipeline::Pipeline>()
-            .execute(snapshot, request, &mut committer)
-            .await;
+        let result = pipeline.execute(snapshot, request, &mut committer).await;
         watcher.abort();
         self.handle.state::<Processing>().stops.lock().remove(&job);
         let report = result.map_err(|error| anyhow!(error))?;
