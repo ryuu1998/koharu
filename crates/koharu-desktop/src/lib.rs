@@ -134,7 +134,6 @@ pub fn run(context: tauri::Context<CefRuntime>) -> Result<()> {
         .plugin(koharu_sentry::plugin())
         .on_web_content_process_terminate(koharu_sentry::web_content_process_terminated)
         .manage(app)
-        .manage(commands::batch::BatchState::default())
         .invoke_handler(commands::handler())
         .setup(move |tauri| {
             let app = tauri.state::<Arc<App>>();

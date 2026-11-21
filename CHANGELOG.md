@@ -1,25 +1,3 @@
-## [0.91.0](https://github.com/koharu-rs/koharu/compare/0.90.3..0.91.0) - 2026-11-21
-
-### ⛰️  Features
-
-- *(linux)* Ship an AppImage again, packaged like the .deb so it runs on the host's own libraries - ([41d01b3](https://github.com/koharu-rs/koharu/commit/41d01b35897cdf3b4a5387f4edd33332a7f2949c))
-
-### 🐛 Bug Fixes
-
-- *(sentry)* Send reports over rustls, so Koharu no longer links the system's OpenSSL 3 - ([d1c5b2a](https://github.com/koharu-rs/koharu/commit/d1c5b2ab88443a1903fb58bf79facb887e044194))
-
-## [0.90.3](https://github.com/koharu-rs/koharu/compare/0.90.2..0.90.3) - 2026-11-21
-
-### 🐛 Bug Fixes
-
-- *(desktop)* Restore macOS editing keys and shortcuts ([#1448](https://github.com/koharu-rs/koharu/issues/1448)) - ([9dc7458](https://github.com/koharu-rs/koharu/commit/9dc745854753b782f0cc8f4b21ddd47c7f799cec))
-
-## [0.90.2](https://github.com/koharu-rs/koharu/compare/0.90.1..0.90.2) - 2026-11-21
-
-### 🐛 Bug Fixes
-
-- *(app)* Give real key presses their KeyboardEvent.code on Windows and Linux, so Delete, Backspace, and the arrow keys reach their shortcuts - ([22f4ec3](https://github.com/koharu-rs/koharu/commit/22f4ec300c675a374931e5b7a7929c4ae250eeba))
-
 ## [0.90.1](https://github.com/koharu-rs/koharu/compare/0.90.0..0.90.1) - 2026-11-21
 
 ### 🐛 Bug Fixes

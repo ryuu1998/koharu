@@ -14,18 +14,9 @@ use crate::PipelineConfig;
 pub struct Request {
     pub target: Target,
     pub stages: BTreeSet<Stage>,
-    /// Whether hosted translations share page history or run independently.
-    pub translation_order: TranslationOrder,
     /// For this run only; the pipeline's own otherwise.
     #[serde(default)]
     pub config: Option<PipelineConfig>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TranslationOrder {
-    Contextual,
-    Independent,
 }
 
 /// What a run works on. It runs every stage it's given on everything it

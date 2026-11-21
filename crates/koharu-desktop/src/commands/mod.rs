@@ -1,10 +1,6 @@
 //! The commands the React interface calls.
 
 mod agent;
-pub(super) mod batch;
-mod batch_archive;
-mod batch_queue;
-mod batch_source;
 mod canvas;
 #[cfg(debug_assertions)]
 mod debug;
@@ -59,17 +55,6 @@ impl IpcResponse for Bytes {
 /// this one.
 pub fn handler() -> impl Fn(Invoke<CefRuntime>) -> bool + Send + Sync + 'static {
     let commands: fn(Invoke<CefRuntime>) -> bool = tauri::generate_handler![
-        batch::process_batch,
-        batch::append_batch,
-        batch::reorder_batch,
-        batch::remove_batch,
-        batch::retry_batch,
-        batch::pause_batch,
-        batch::resume_batch,
-        batch::stop_batch,
-        batch_source::browse_batch_source,
-        batch_source::browse_batch_output,
-        batch_source::get_batch_exports,
         project::list_projects,
         project::create,
         project::open,
@@ -142,17 +127,6 @@ pub fn handler() -> impl Fn(Invoke<CefRuntime>) -> bool + Send + Sync + 'static 
 /// `handler`'s, but the debug build's own.
 pub fn bindings(types: &mut Types) -> Vec<Function> {
     specta::function::collect_functions![
-        batch::process_batch,
-        batch::append_batch,
-        batch::reorder_batch,
-        batch::remove_batch,
-        batch::retry_batch,
-        batch::pause_batch,
-        batch::resume_batch,
-        batch::stop_batch,
-        batch_source::browse_batch_source,
-        batch_source::browse_batch_output,
-        batch_source::get_batch_exports,
         project::list_projects,
         project::create,
         project::open,

@@ -15,7 +15,7 @@ pub use config::PipelineConfig;
 pub use error::{Error, Result};
 pub use event::{Event, Outcome, RunId};
 pub use pipeline::Pipeline;
-pub use request::{Area, Request, Stage, Target, TranslationOrder};
+pub use request::{Area, Request, Stage, Target};
 pub use stages::{
     detect::{Detector, DetectorConfig},
     inpaint::{Inpainter, InpainterConfig},

@@ -206,7 +206,6 @@ impl App {
             Request {
                 target,
                 stages,
-                translation_order: koharu_pipeline::TranslationOrder::Contextual,
                 config,
             },
         )?)

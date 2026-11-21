@@ -169,13 +169,6 @@ fn in_name_order(path: &Path, mut images: Members) -> anyhow::Result<Vec<Vec<u8>
 
 /// A ZIP or CBZ archive's images.
 fn extract_zip(path: &Path) -> anyhow::Result<Vec<Vec<u8>>> {
-    Ok(extract_zip_named(path)?
-        .into_iter()
-        .map(|(_, bytes)| bytes)
-        .collect())
-}
-
-pub(super) fn extract_zip_named(path: &Path) -> anyhow::Result<Members> {
     let mut archive = zip::ZipArchive::new(File::open(path)?)
         .with_context(|| format!("failed to read the archive {}", path.display()))?;
     let mut images = Vec::new();
@@ -199,11 +192,7 @@ pub(super) fn extract_zip_named(path: &Path) -> anyhow::Result<Members> {
             .with_context(|| format!("failed to read {name:?} in {}", path.display()))?;
         images.push((name, bytes));
     }
-    if images.is_empty() {
-        bail!("{} holds no images", path.display());
-    }
-    alphanumeric_sort::sort_slice_by_str_key(&mut images, |(name, _)| name);
-    Ok(images)
+    in_name_order(path, images)
 }
 
 /// Writes into the RAR member opened last, which is the one being extracted:

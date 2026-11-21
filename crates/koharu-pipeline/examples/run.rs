@@ -116,7 +116,6 @@ async fn main() -> Result<()> {
     let request = Request {
         target: Target::Project,
         stages: cli.stages.into_iter().collect(),
-        translation_order: koharu_pipeline::TranslationOrder::Contextual,
         config: None,
     };
     let run = pipeline.run(Arc::clone(&session), request)?;
