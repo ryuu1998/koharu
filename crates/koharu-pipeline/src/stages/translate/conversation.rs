@@ -66,12 +66,6 @@ impl Conversation {
 pub(crate) struct Conversations(HashMap<ProjectId, Arc<Mutex<Conversation>>>);
 
 impl Conversations {
-    /// A batch page uses its own conversation so hosted requests can overlap.
-    pub(crate) fn independent() -> OwnedMutexGuard<Conversation> {
-        Arc::new(Mutex::new(Conversation::new()))
-            .try_lock_owned()
-            .expect("new conversation is unlocked")
-    }
     /// Whether a translation holds `project`'s conversation.
     pub(crate) fn busy(&self, project: ProjectId) -> bool {
         self.0

@@ -260,7 +260,6 @@ impl Tool for Run {
         let request = Request {
             target: args.target,
             stages: args.stages,
-            translation_order: koharu_pipeline::TranslationOrder::Contextual,
             config: None,
         };
         let run = tools

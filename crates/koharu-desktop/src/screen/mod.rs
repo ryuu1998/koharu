@@ -834,8 +834,6 @@ pub fn open(
         .build()
         .context("failed to create the main window")?;
     add_webview(&window, config.url.clone(), shared)?;
-    #[cfg(target_os = "macos")]
-    keys::take_edit_chords();
     window.show()?;
     window.set_focus()?;
     Ok(())
