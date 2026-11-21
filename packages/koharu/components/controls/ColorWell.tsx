@@ -6,8 +6,10 @@ import { HexColorInput, HexColorPicker } from 'react-colorful'
 import { useTranslation } from 'react-i18next'
 
 import { useColorSampling } from '@/components/controls/ColorSampling'
+import { toHex, toRgba } from '@/lib/color'
 import { Button } from '@koharu/ui/components/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@koharu/ui/components/popover'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@koharu/ui/components/tooltip'
 import { cn } from '@koharu/ui/lib/utils'
 
 type ColorWellProps = {
@@ -46,7 +48,7 @@ export function ColorWell(props: ColorWellProps) {
   }, [value])
 
   const set = (color: string) => {
-    const normalized = normalize(color)
+    const normalized = toHex(toRgba(color))
     setDraft(normalized)
     setTransparent(false)
     if (props.allowTransparent) props.onChange(normalized)
@@ -61,34 +63,49 @@ export function ColorWell(props: ColorWellProps) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        aria-label={accessibleLabel}
-        disabled={disabled}
-        className={cn(
-          'grid place-items-center border border-input bg-background disabled:cursor-not-allowed disabled:opacity-40',
-          size === 'sm' ? 'size-6 rounded-md' : 'size-8 rounded-lg',
-        )}
-      >
-        {transparent ? (
-          <SquareSlash
-            aria-hidden='true'
-            className={cn('text-muted-foreground', size === 'sm' ? 'size-3.5' : 'size-4')}
-          />
-        ) : (
-          <span
-            className={cn(
-              'rounded-[3px] ring-1 ring-black/15',
-              size === 'sm' ? 'size-3' : 'size-4',
-            )}
-            style={{ backgroundColor: draft }}
-          />
-        )}
-      </PopoverTrigger>
-      <PopoverContent side='right' align='start' className='w-60 rounded-xl p-3'>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              aria-label={accessibleLabel}
+              disabled={disabled}
+              // A small well is a field among a bar's fields; a large one is a bare swatch, as
+              // Photoshop's toolbar shows its foreground colour.
+              className={cn(
+                'grid place-items-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40',
+                size === 'sm'
+                  ? 'size-6 rounded-md border border-input bg-background'
+                  : 'size-8 rounded-md',
+              )}
+            />
+          }
+        >
+          {transparent ? (
+            <SquareSlash
+              aria-hidden='true'
+              className={cn('text-muted-foreground', size === 'sm' ? 'size-3.5' : 'size-4')}
+            />
+          ) : (
+            <span
+              className={cn(
+                size === 'sm'
+                  ? 'size-3 rounded-[3px] ring-1 ring-black/15'
+                  : 'size-5 rounded-[6px] border border-foreground/40 shadow-[inset_0_0_0_1px_white]',
+              )}
+              style={{ backgroundColor: draft }}
+            />
+          )}
+        </TooltipTrigger>
+        {/* Beside the tool rail's tools, as theirs are. */}
+        <TooltipContent side={size === 'sm' ? undefined : 'right'}>
+          {accessibleLabel}
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent side='right' align='start' className='w-60 p-3'>
         <div>
           <HexColorPicker
             color={draft}
-            onChange={(color) => setDraft(normalize(color))}
+            onChange={(color) => setDraft(toHex(toRgba(color)))}
             onChangeEnd={set}
           />
         </div>
@@ -129,11 +146,4 @@ export function ColorWell(props: ColorWellProps) {
       </PopoverContent>
     </Popover>
   )
-}
-
-function normalize(value: string): string {
-  const digits = value.startsWith('#') ? value.slice(1) : value
-  const expanded =
-    digits.length === 3 ? [...digits].map((digit) => digit.repeat(2)).join('') : digits
-  return `#${expanded}`.toUpperCase()
 }
