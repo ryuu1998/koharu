@@ -8,6 +8,7 @@ function Slider<Value extends number | readonly number[]>({
   value,
   min = 0,
   max = 100,
+  'aria-valuetext': ariaValueText,
   ...props
 }: SliderPrimitive.Root.Props<Value>) {
   const values = Array.isArray(value)
@@ -43,6 +44,9 @@ function Slider<Value extends number | readonly number[]>({
         </SliderPrimitive.Track>
         {Array.from({ length: values.length }, (_, index) => (
           <SliderPrimitive.Thumb
+            aria-label={props['aria-label']}
+            aria-labelledby={props['aria-labelledby']}
+            aria-valuetext={ariaValueText}
             data-slot='slider-thumb'
             key={index}
             className='relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50'

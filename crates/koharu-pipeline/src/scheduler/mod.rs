@@ -17,7 +17,7 @@ use parking_lot::RwLock;
 use petgraph::{Direction::Incoming, stable_graph::NodeIndex};
 use tokio::{
     runtime::Handle,
-    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
+    sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot},
     task::{self, JoinError, JoinSet},
     time::{self, Instant},
 };
@@ -36,6 +36,8 @@ use crate::{
 const AHEAD: usize = 3;
 /// The most pages one recognition call reads.
 const RECOGNIZE_PAGES: usize = 8;
+/// Batch pages may make at most six independent hosted requests at once.
+const HOSTED_BATCH_REQUESTS: usize = 6;
 /// How long a model no setting uses, one a run brought as Generative Fill's
 /// does, stays after a run last ended, as Ollama keeps a model five minutes
 /// after its last request, so filling again doesn't load it again.
@@ -43,6 +45,9 @@ const KEEP: Duration = Duration::from_secs(5 * 60);
 
 pub(crate) enum Command {
     Run(Run),
+    Pause(RunId, bool, oneshot::Sender<bool>),
+    StopRun(RunId),
+    UnloadWhenIdle,
     Stop,
     Unload,
     /// The settings changed: unload what nothing uses now.
@@ -97,6 +102,7 @@ pub(crate) struct Scheduler {
     conversations: Conversations,
     /// When the models no setting uses leave: `KEEP` after a run last ended.
     idle: Option<Instant>,
+    unload_when_idle: bool,
 }
 
 impl Scheduler {
@@ -118,6 +124,7 @@ impl Scheduler {
             running: HashMap::new(),
             conversations: Conversations::default(),
             idle: None,
+            unload_when_idle: false,
         };
         tokio::spawn(scheduler.run());
         sender
@@ -139,6 +146,8 @@ impl Scheduler {
                 }
             }
             self.admit();
+            self.acknowledge_pauses();
+            self.unload_if_idle();
         }
         // The pipeline is gone: what's running stops, and nothing is written.
         for run in &self.runs {
@@ -158,6 +167,42 @@ impl Scheduler {
                 outcome: Outcome::Done,
             }),
             Command::Run(run) => self.runs.push(run),
+            Command::Pause(id, paused, reply) => {
+                if let Some(run) = self.runs.iter_mut().find(|run| run.id == id) {
+                    run.paused = paused;
+                    if paused {
+                        run.pause_waiters.push(reply);
+                    } else {
+                        for waiter in run.pause_waiters.drain(..) {
+                            let _ = waiter.send(false);
+                        }
+                        let _ = reply.send(true);
+                    }
+                } else {
+                    let _ = reply.send(false);
+                }
+            }
+            Command::StopRun(id) => {
+                if let Some(index) = self.runs.iter().position(|run| run.id == id) {
+                    self.runs[index].cancel.cancel();
+                    self.runs[index].paused = true;
+                    for waiter in self.runs[index].pause_waiters.drain(..) {
+                        let _ = waiter.send(false);
+                    }
+                    if !self
+                        .running
+                        .values()
+                        .any(|task| task.jobs.iter().any(|(run, _)| *run == id))
+                    {
+                        self.runs.remove(index);
+                        self.emit(Event::Ended {
+                            run: id,
+                            outcome: Outcome::Stopped,
+                        });
+                        self.rest();
+                    }
+                }
+            }
             Command::Stop => {
                 // Each task's call waiting for the GPU is dropped unrun.
                 for run in std::mem::take(&mut self.runs) {
@@ -168,6 +213,10 @@ impl Scheduler {
                     });
                 }
                 self.rest();
+            }
+            Command::UnloadWhenIdle => {
+                self.unload_when_idle = true;
+                self.unload_if_idle();
             }
             Command::Unload => self
                 .gpu
@@ -195,6 +244,22 @@ impl Scheduler {
         match result {
             Ok(()) => {
                 for mut run in runs {
+                    if run.cancel.is_cancelled() {
+                        if self
+                            .running
+                            .values()
+                            .any(|task| task.jobs.iter().any(|(id, _)| *id == run.id))
+                        {
+                            self.runs.push(run);
+                        } else {
+                            ended = true;
+                            self.emit(Event::Ended {
+                                run: run.id,
+                                outcome: Outcome::Stopped,
+                            });
+                        }
+                        continue;
+                    }
                     for &(id, job) in &jobs {
                         if id == run.id
                             && let Some(job) = run.graph.remove_node(job)
@@ -219,6 +284,22 @@ impl Scheduler {
             }
             Err(reason) => {
                 for run in runs {
+                    if run.cancel.is_cancelled() {
+                        if self
+                            .running
+                            .values()
+                            .any(|task| task.jobs.iter().any(|(id, _)| *id == run.id))
+                        {
+                            self.runs.push(run);
+                        } else {
+                            ended = true;
+                            self.emit(Event::Ended {
+                                run: run.id,
+                                outcome: Outcome::Stopped,
+                            });
+                        }
+                        continue;
+                    }
                     if jobs.iter().any(|&(id, _)| id == run.id) {
                         ended = true;
                         run.cancel.cancel();
@@ -248,6 +329,30 @@ impl Scheduler {
         if self.runs.is_empty() {
             self.gpu.empty_cache();
         }
+        self.unload_if_idle();
+    }
+
+    fn unload_if_idle(&mut self) {
+        if self.unload_when_idle && self.runs.is_empty() && self.running.is_empty() {
+            self.unload_when_idle = false;
+            self.gpu
+                .run(Turn::Upkeep, |models| models.retain(&HashSet::new()));
+        }
+    }
+
+    fn acknowledge_pauses(&mut self) {
+        for run in &mut self.runs {
+            if run.paused
+                && !self
+                    .running
+                    .values()
+                    .any(|task| task.jobs.iter().any(|(id, _)| *id == run.id))
+            {
+                for waiter in run.pause_waiters.drain(..) {
+                    let _ = waiter.send(true);
+                }
+            }
+        }
     }
 
     /// Unloads the models neither the settings nor a queued run use, once
@@ -268,11 +373,20 @@ impl Scheduler {
             .iter()
             .enumerate()
             .flat_map(|(at, run)| {
+                let translating = run
+                    .graph
+                    .node_weights()
+                    .filter(|job| job.stage == Stage::Translate && job.running)
+                    .count();
                 run.graph.externals(Incoming).filter_map(move |job| {
                     let node = &run.graph[job];
-                    let held =
-                        node.stage == Stage::Translate && self.conversations.busy(run.project);
-                    (!node.running && !held).then_some(Candidate {
+                    let held = node.stage == Stage::Translate
+                        && if run.independent_translation {
+                            translating >= HOSTED_BATCH_REQUESTS
+                        } else {
+                            self.conversations.busy(run.project)
+                        };
+                    (!run.paused && !node.running && !held).then_some(Candidate {
                         run: at,
                         job,
                         stage: node.stage,
@@ -353,9 +467,13 @@ impl Scheduler {
             config: Arc::clone(&run.config),
             area: run.area.clone(),
             conversation: (first.stage == Stage::Translate).then(|| {
-                self.conversations
-                    .lock(run.project)
-                    .expect("a translation is ready only while its conversation is free")
+                if run.independent_translation {
+                    Conversations::independent()
+                } else {
+                    self.conversations
+                        .lock(run.project)
+                        .expect("a translation is ready only while its conversation is free")
+                }
             }),
         };
         let running = Running {
@@ -385,6 +503,93 @@ impl Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scheduler_with_pages(count: usize) -> anyhow::Result<(tempfile::TempDir, Scheduler)> {
+        let directory = tempfile::tempdir()?;
+        let mut session = koharu_scene::Session::create(directory.path().join("test.khr"))?;
+        let ops = (0..count)
+            .map(|index| {
+                serde_json::from_value(serde_json::json!({
+                    "op": "add_page", "index": index, "size": {"width": 100, "height": 100}
+                }))
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        session.apply(koharu_scene::Edit {
+            label: "test".into(),
+            ops,
+        })?;
+        let project = session.project();
+        let stages = std::collections::BTreeSet::from([Stage::Translate]);
+        let plan = Plan::new(&project, &crate::Target::Project, &stages)?;
+        let run = Run::new(
+            RunId(0),
+            Arc::new(parking_lot::Mutex::new(session)),
+            project.id(),
+            PipelineConfig::default(),
+            plan,
+            &stages,
+            true,
+        );
+        let (_, commands) = mpsc::unbounded_channel();
+        Ok((
+            directory,
+            Scheduler {
+                commands,
+                events: Events::new(),
+                gpu: Gpu::spawn(Handle::current()),
+                config: Arc::new(RwLock::new(PipelineConfig::default())),
+                runs: vec![run],
+                ahead: Arc::new(Semaphore::new(AHEAD)),
+                tasks: JoinSet::new(),
+                running: HashMap::new(),
+                conversations: Conversations::default(),
+                idle: None,
+                unload_when_idle: false,
+            },
+        ))
+    }
+
+    #[tokio::test]
+    async fn independent_cloud_requests_stop_at_six_and_refill() -> anyhow::Result<()> {
+        let (_directory, mut scheduler) = scheduler_with_pages(7)?;
+        let jobs: Vec<_> = scheduler.runs[0].graph.node_indices().collect();
+        for &job in jobs.iter().take(6) {
+            scheduler.runs[0].graph[job].running = true;
+        }
+        assert!(scheduler.ready().is_empty());
+        scheduler.runs[0].graph[jobs[0]].running = false;
+        assert_eq!(scheduler.ready().len(), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pause_waits_for_admitted_work_and_stop_releases_waiter() -> anyhow::Result<()> {
+        let (_directory, mut scheduler) = scheduler_with_pages(1)?;
+        let job = scheduler.runs[0].graph.node_indices().next().unwrap();
+        let page = scheduler.runs[0].graph[job].page;
+        let pending = tokio::spawn(std::future::pending::<()>());
+        scheduler.running.insert(
+            pending.id(),
+            Running {
+                stage: Stage::Translate,
+                jobs: vec![(RunId(0), job)],
+                page,
+            },
+        );
+        let (reply, mut response) = oneshot::channel();
+        scheduler.handle(Command::Pause(RunId(0), true, reply));
+        scheduler.acknowledge_pauses();
+        assert!(matches!(
+            response.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(scheduler.ready().is_empty());
+        scheduler.handle(Command::StopRun(RunId(0)));
+        assert!(!response.await?);
+        assert!(scheduler.runs[0].cancel.is_cancelled());
+        pending.abort();
+        Ok(())
+    }
 
     #[test]
     fn interactive_runs_go_first_then_the_oldest_page_in_stage_order() {

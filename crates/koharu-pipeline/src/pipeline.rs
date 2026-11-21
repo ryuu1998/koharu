@@ -11,7 +11,7 @@ use parking_lot::{Mutex, RwLock};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
-    Error, Event, PipelineConfig, Request, Result, RunId,
+    Error, Event, PipelineConfig, Request, Result, RunId, Stage, TranslationOrder,
     event::Events,
     scheduler::{Command, Plan, Run, Scheduler},
 };
@@ -72,7 +72,17 @@ impl Pipeline {
             run: id,
             steps: plan.pages() * request.stages.len(),
         });
-        let run = Run::new(id, session, project.id(), config, plan, &request.stages);
+        let independent = request.translation_order == TranslationOrder::Independent
+            && crate::stages::key(Stage::Translate, &config).is_none();
+        let run = Run::new(
+            id,
+            session,
+            project.id(),
+            config,
+            plan,
+            &request.stages,
+            independent,
+        );
         self.send(Command::Run(run));
         Ok(id)
     }
@@ -102,10 +112,28 @@ impl Pipeline {
         self.send(Command::Stop);
     }
 
+    /// Hold or resume admission of new work for one run. Work already admitted
+    /// completes and is written before that run can make further progress.
+    pub fn pause(&self, run: RunId, paused: bool) -> tokio::sync::oneshot::Receiver<bool> {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        self.send(Command::Pause(run, paused, reply));
+        response
+    }
+
+    /// Stop one run without cancelling unrelated editor or agent work.
+    pub fn stop_run(&self, run: RunId) {
+        self.send(Command::StopRun(run));
+    }
+
     /// Unloads every model once the GPU's current work ends, as ComfyUI's
     /// Unload Models does.
     pub fn unload(&self) {
         self.send(Command::Unload);
+    }
+
+    /// Release loaded models once all active runs have drained.
+    pub fn unload_when_idle(&self) {
+        self.send(Command::UnloadWhenIdle);
     }
 
     /// Forgets the translation conversation of a project that closed.
@@ -152,6 +180,7 @@ mod tests {
         let request = Request {
             target: Target::Project,
             stages: BTreeSet::from([Stage::Detect]),
+            translation_order: TranslationOrder::Contextual,
             config: None,
         };
         let run = pipeline.run(session, request).expect("the run starts");

@@ -81,6 +81,7 @@ interface KoharuStore {
   processingScope: PipelineScope
   processingStages: Stage[]
   settingsOpen: boolean
+  batchOpen: boolean
   /** Whether the History window shows over the canvas. */
   historyOpen: boolean
   selectPages: (pages: PageId[]) => void
@@ -89,6 +90,7 @@ interface KoharuStore {
   setProcessingScope: (scope: PipelineScope) => void
   setProcessingStages: (stages: Stage[]) => void
   setSettingsOpen: (open: boolean) => void
+  setBatchOpen: (open: boolean) => void
   setHistoryOpen: (open: boolean) => void
   selectLayers: (layers: LayerId[]) => void
   setTool: (tool: CanvasTool) => void
@@ -116,6 +118,7 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   processingScope: 'project',
   processingStages: [...pipelineStages],
   settingsOpen: false,
+  batchOpen: false,
   historyOpen: false,
   selectPages: (selectedPages) => set({ selectedPages: [...new Set(selectedPages)] }),
   showPanel: (panel) => set({ panel, storyHover: null }),
@@ -123,6 +126,7 @@ export const useKoharuStore = create<KoharuStore>()((set) => ({
   setProcessingScope: (processingScope) => set({ processingScope }),
   setProcessingStages: (processingStages) => set({ processingStages }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setBatchOpen: (batchOpen) => set({ batchOpen, ...(batchOpen ? { settingsOpen: false } : {}) }),
   setHistoryOpen: (historyOpen) => set({ historyOpen }),
   selectLayers: (selectedLayers) => set({ selectedLayers: [...new Set(selectedLayers)] }),
   setTool: (tool) => set({ tool }),

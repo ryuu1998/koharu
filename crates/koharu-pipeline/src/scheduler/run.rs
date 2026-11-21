@@ -19,6 +19,9 @@ use crate::{Error, PipelineConfig, Result, RunId, Stage, Target, stages::inpaint
 
 pub(crate) struct Run {
     pub(super) id: RunId,
+    pub(super) paused: bool,
+    pub(super) pause_waiters: Vec<tokio::sync::oneshot::Sender<bool>>,
+    pub(super) independent_translation: bool,
     pub(super) mode: Mode,
     pub(super) session: Arc<Mutex<Session>>,
     pub(super) project: ProjectId,
@@ -138,6 +141,7 @@ impl Run {
         config: PipelineConfig,
         plan: Plan,
         stages: &BTreeSet<Stage>,
+        independent_translation: bool,
     ) -> Self {
         let mut graph = StableDiGraph::new();
         let mut translated = None;
@@ -164,13 +168,16 @@ impl Run {
                 if let Some(&recognize) = jobs.get(&Stage::Recognize) {
                     graph.add_edge(recognize, translate, ());
                 }
-                if let Some(before) = translated.replace(translate) {
+                if !independent_translation && let Some(before) = translated.replace(translate) {
                     graph.add_edge(before, translate, ());
                 }
             }
         }
         Self {
             id,
+            paused: false,
+            pause_waiters: Vec::new(),
+            independent_translation,
             mode: plan.mode,
             session,
             project,
@@ -285,6 +292,7 @@ mod tests {
             PipelineConfig::default(),
             plan,
             &stages,
+            false,
         );
         assert_eq!(ready(&run), [(0, Stage::Detect), (1, Stage::Detect)]);
         finish(&mut run, 1, Stage::Detect);
@@ -295,6 +303,30 @@ mod tests {
         assert_eq!(ready(&run), [(0, Stage::Translate)]);
         finish(&mut run, 0, Stage::Translate);
         assert_eq!(ready(&run), [(1, Stage::Translate)]);
+        Ok(())
+    }
+
+    #[test]
+    fn independent_batch_translation_can_start_without_the_previous_page() -> anyhow::Result<()> {
+        let (_dir, session, ..) = project()?;
+        let project = session.project();
+        let stages = stages(&[Stage::Detect, Stage::Recognize, Stage::Translate]);
+        let plan = Plan::new(&project, &Target::Project, &stages)?;
+        let mut run = Run::new(
+            RunId(0),
+            Arc::new(Mutex::new(session)),
+            project.id(),
+            PipelineConfig::default(),
+            plan,
+            &stages,
+            true,
+        );
+        finish(&mut run, 1, Stage::Detect);
+        finish(&mut run, 1, Stage::Recognize);
+        assert!(ready(&run).contains(&(1, Stage::Translate)));
+        finish(&mut run, 0, Stage::Detect);
+        finish(&mut run, 0, Stage::Recognize);
+        assert!(ready(&run).contains(&(0, Stage::Translate)));
         Ok(())
     }
 }

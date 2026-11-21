@@ -85,6 +85,76 @@ export type Balloon = {
   outline: Path
 }
 
+export type BatchChapter = {
+  path: string
+  name: string
+  size: number
+  created_at: number | null
+  pages: number
+  thumbnail: string | null
+  error: string | null
+}
+
+export type BatchEntry = {
+  path: string
+  output: string
+  replacement: string | null
+}
+
+export type BatchEvent =
+  | { event: 'started'; total_chapters: number }
+  | { event: 'queue_changed'; paths: string[] }
+  | { event: 'chapter_queued'; path: string }
+  | { event: 'chapter_started'; path: string; name: string; pages: number }
+  | {
+      event: 'chapter_progress'
+      path: string
+      completed_pages: number
+      active_pages: number
+      total_pages: number
+      completed_steps: number
+      total_steps: number
+      stage: BatchStage
+    }
+  | { event: 'chapter_exporting'; path: string }
+  | { event: 'chapter_rendered'; path: string; completed_pages: number; total_pages: number }
+  | { event: 'chapter_finished'; path: string; output: string }
+  | { event: 'chapter_skipped'; path: string; output: string }
+  | { event: 'chapter_failed'; path: string; name: string; error: string }
+  | { event: 'finished'; report: BatchReport }
+
+export type BatchExport = {
+  source: string
+  output: string
+}
+
+export type BatchFailure = {
+  chapter: string
+  error: string
+}
+
+export type BatchReport = {
+  completed: number
+  skipped: number
+  failures: BatchFailure[]
+  stopped: boolean
+}
+
+export type BatchRequest = {
+  id: string
+  chapters: BatchEntry[]
+  jpeg_quality: number
+}
+
+export type BatchSource = {
+  path: string
+  default_output: string
+  chapters: BatchChapter[]
+  exported: BatchExport[]
+}
+
+export type BatchStage = 'detection' | 'ocr' | 'inpainting' | 'translation'
+
 export type Blend =
   | 'normal'
   | 'multiply'
@@ -977,6 +1047,37 @@ export type Vendor = {
 }
 
 export const commands = {
+  processBatch: (request: BatchRequest, onEvent: Channel<BatchEvent>) =>
+    runner('process_batch', (options) =>
+      invoke<BatchReport>('process_batch', { request, onEvent }, options),
+    ),
+  appendBatch: (id: string, chapters: BatchEntry[]) =>
+    runner('append_batch', (options) => invoke<null>('append_batch', { id, chapters }, options)),
+  reorderBatch: (id: string, path: string, before: string | null) =>
+    runner('reorder_batch', (options) =>
+      invoke<null>('reorder_batch', { id, path, before }, options),
+    ),
+  removeBatch: (id: string, path: string) =>
+    runner('remove_batch', (options) => invoke<null>('remove_batch', { id, path }, options)),
+  retryBatch: (id: string, path: string) =>
+    runner('retry_batch', (options) => invoke<null>('retry_batch', { id, path }, options)),
+  pauseBatch: (id: string) =>
+    runner('pause_batch', (options) => invoke<boolean>('pause_batch', { id }, options)),
+  resumeBatch: (id: string) =>
+    runner('resume_batch', (options) => invoke<null>('resume_batch', { id }, options)),
+  stopBatch: () => runner('stop_batch', (options) => invoke<null>('stop_batch', {}, options)),
+  browseBatchSource: () =>
+    runner('browse_batch_source', (options) =>
+      invoke<BatchSource | null>('browse_batch_source', {}, options),
+    ),
+  browseBatchOutput: () =>
+    runner('browse_batch_output', (options) =>
+      invoke<string | null>('browse_batch_output', {}, options),
+    ),
+  getBatchExports: (chapters: string[], output: string) =>
+    runner('get_batch_exports', (options) =>
+      invoke<BatchExport[]>('get_batch_exports', { chapters, output }, options),
+    ),
   listProjects: () =>
     runner('list_projects', (options) => invoke<string[]>('list_projects', {}, options)),
   /** Creates a project and opens it. */
