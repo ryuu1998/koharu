@@ -5640,6 +5640,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "ui-events",
+ "uuid",
  "webp",
  "wgpu",
  "windows",

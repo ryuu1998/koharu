@@ -62,9 +62,13 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 ui-events = { workspace = true }
+uuid = { workspace = true }
 webp = { workspace = true }
 wgpu = { workspace = true }
 zip = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }
