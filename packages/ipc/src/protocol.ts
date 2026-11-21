@@ -805,6 +805,62 @@ export type Raster = {
   offset?: Offset
 }
 
+export type ReaderBook = {
+  id: string
+  path: string
+  name: string
+  folder: string
+  pages: number
+  size: number
+  added_at: number
+  thumbnail: string | null
+  error: string | null
+  progress: ReaderProgress | null
+}
+
+export type ReaderDirection = 'rtl' | 'ltr'
+
+export type ReaderFit = 'page' | 'width' | 'height' | 'original'
+
+export type ReaderFolderError = {
+  path: string
+  error: string
+}
+
+export type ReaderLayout = 'single' | 'spread' | 'webtoon'
+
+export type ReaderLibrary = {
+  folders: string[]
+  books: ReaderBook[]
+  settings: ReaderSettings
+  folder_errors: ReaderFolderError[]
+}
+
+export type ReaderPageInfo = {
+  name: string
+  mime: string
+}
+
+export type ReaderProgress = {
+  page: number
+  offset: number
+  finished: boolean
+}
+
+export type ReaderSession = {
+  id: string
+  name: string
+  pages: ReaderPageInfo[]
+  page: number
+}
+
+export type ReaderSettings = {
+  layout: ReaderLayout
+  direction: ReaderDirection
+  fit: ReaderFit
+  zoom: number
+}
+
 /**  The recognizers, by id in the section and by name. */
 export type Recognizer = 'manga-ocr-ar' | 'baberu-ocr' | 'hayai-ocr'
 
@@ -1077,6 +1133,38 @@ export const commands = {
   getBatchExports: (chapters: string[], output: string) =>
     runner('get_batch_exports', (options) =>
       invoke<BatchExport[]>('get_batch_exports', { chapters, output }, options),
+    ),
+  getReaderLibrary: () =>
+    runner('get_reader_library', (options) =>
+      invoke<ReaderLibrary>('get_reader_library', {}, options),
+    ),
+  browseReaderFolder: () =>
+    runner('browse_reader_folder', (options) =>
+      invoke<ReaderLibrary | null>('browse_reader_folder', {}, options),
+    ),
+  refreshReaderLibrary: () =>
+    runner('refresh_reader_library', (options) =>
+      invoke<ReaderLibrary>('refresh_reader_library', {}, options),
+    ),
+  openReaderBook: (book: string) =>
+    runner('open_reader_book', (options) =>
+      invoke<ReaderSession>('open_reader_book', { book }, options),
+    ),
+  getReaderPage: (session: string, page: number) =>
+    runner('get_reader_page', (options) =>
+      invoke<ArrayBuffer>('get_reader_page', { session, page }, options),
+    ),
+  closeReaderBook: (session: string) =>
+    runner('close_reader_book', (options) =>
+      invoke<null>('close_reader_book', { session }, options),
+    ),
+  saveReaderSettings: (settings: ReaderSettings) =>
+    runner('save_reader_settings', (options) =>
+      invoke<ReaderSettings>('save_reader_settings', { settings }, options),
+    ),
+  saveReaderProgress: (book: string, page: number, offset: number, finished: boolean) =>
+    runner('save_reader_progress', (options) =>
+      invoke<null>('save_reader_progress', { book, page, offset, finished }, options),
     ),
   listProjects: () =>
     runner('list_projects', (options) => invoke<string[]>('list_projects', {}, options)),

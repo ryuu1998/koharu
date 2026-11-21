@@ -1,0 +1,319 @@
+.reader-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--destructive);
+  font-size: 12px;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.reader-error svg {
+  width: 16px;
+  flex-shrink: 0;
+}
+.reader-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-canvas);
+  color: var(--foreground);
+}
+.reader-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.reader-viewport.is-paged {
+  touch-action: none;
+}
+.reader-viewport.is-webtoon {
+  touch-action: pan-y;
+}
+.reader-viewport.is-zoomed {
+  cursor: grab;
+}
+.reader-viewport.is-zoomed:active {
+  cursor: grabbing;
+}
+.reader-page-spread {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100%;
+  width: max-content;
+  min-height: 100%;
+  padding: 48px 16px;
+  gap: 0;
+}
+.reader-page-spread.is-rtl {
+  flex-direction: row-reverse;
+}
+.reader-paged-image,
+.reader-webtoon-page {
+  position: relative;
+  flex-shrink: 0;
+  background: var(--surface-well);
+}
+.reader-paged-image img,
+.reader-webtoon-page img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.reader-webtoon-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+.reader-webtoon-page {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.reader-page-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.reader-chrome {
+  pointer-events: none;
+  transition: opacity 120ms;
+}
+.reader-chrome.is-hidden {
+  opacity: 0;
+}
+.reader-topbar,
+.reader-bottombar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: absolute;
+  z-index: 2;
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  backdrop-filter: blur(16px);
+}
+.reader-topbar {
+  top: 0;
+  inset-inline: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.reader-topbar h1 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  text-align: center;
+  font-weight: 500;
+}
+.reader-bottombar {
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  max-width: calc(100% - 24px);
+}
+.reader-bottombar input[type='range'] {
+  width: clamp(60px, 18vw, 240px);
+  accent-color: var(--primary);
+}
+.reader-page-number {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.reader-page-number input {
+  width: 36px;
+  background: transparent;
+  text-align: right;
+  color: var(--foreground);
+  appearance: textfield;
+}
+.reader-page-number input::-webkit-inner-spin-button {
+  appearance: none;
+}
+.reader-bottom-separator {
+  height: 18px;
+  width: 1px;
+  background: var(--border);
+  margin: 0 3px;
+}
+.reader-zoom-label {
+  font-size: 11px;
+  width: 38px;
+  text-align: center;
+}
+.reader-view-error {
+  position: absolute;
+  top: 56px;
+  left: 16px;
+  right: 16px;
+  padding: 8px 12px;
+  background: var(--popover);
+  color: var(--destructive);
+  font-size: 12px;
+  border-radius: 6px;
+}
+.reader-show-controls {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--popover);
+  color: var(--muted-foreground);
+  opacity: 0.65;
+}
+.reader-show-controls svg {
+  width: 17px;
+}
+.reader-settings-body {
+  padding: 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  overflow: auto;
+}
+.reader-settings-body h3 {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.reader-option-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.reader-option-group button {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--background);
+}
+.reader-option-group button[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--primary);
+  color: var(--accent-foreground);
+}
+.reader-option-group button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.reader-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reader-zoom-row output {
+  min-width: 48px;
+  text-align: center;
+  font-size: 13px;
+}
+.reader-setting-note {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .reader-settings-label {
+    display: none;
+  }
+  .reader-bottombar {
+    gap: 2px;
+    padding: 3px;
+    bottom: 6px;
+  }
+  .reader-bottombar input[type='range'] {
+    width: 64px;
+  }
+  .reader-zoom-label,
+  .reader-bottom-separator {
+    display: none;
+  }
+  .reader-topbar {
+    padding: 4px;
+  }
+}
+@media (pointer: coarse) {
+  .reader-topbar button,
+  .reader-bottombar button,
+  .reader-settings-body button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .reader-show-controls {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reader-chrome,
+  .reader-settings-sheet {
+    transition: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .reader-topbar,
+  .reader-bottombar {
+    background: var(--background);
+    backdrop-filter: none;
+  }
+}
+
+.reader-settings-sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  width: min(340px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
+  outline: none;
+}
+.reader-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.reader-settings-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+}

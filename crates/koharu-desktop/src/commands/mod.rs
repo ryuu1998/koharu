@@ -15,6 +15,7 @@ mod pages;
 mod preferences;
 mod processing;
 mod project;
+pub(super) mod reader;
 mod scene;
 
 use serde::Serialize;
@@ -70,6 +71,14 @@ pub fn handler() -> impl Fn(Invoke<CefRuntime>) -> bool + Send + Sync + 'static 
         batch_source::browse_batch_source,
         batch_source::browse_batch_output,
         batch_source::get_batch_exports,
+        reader::get_reader_library,
+        reader::browse_reader_folder,
+        reader::refresh_reader_library,
+        reader::open_reader_book,
+        reader::get_reader_page,
+        reader::close_reader_book,
+        reader::save_reader_settings,
+        reader::save_reader_progress,
         project::list_projects,
         project::create,
         project::open,
@@ -153,6 +162,14 @@ pub fn bindings(types: &mut Types) -> Vec<Function> {
         batch_source::browse_batch_source,
         batch_source::browse_batch_output,
         batch_source::get_batch_exports,
+        reader::get_reader_library,
+        reader::browse_reader_folder,
+        reader::refresh_reader_library,
+        reader::open_reader_book,
+        reader::get_reader_page,
+        reader::close_reader_book,
+        reader::save_reader_settings,
+        reader::save_reader_progress,
         project::list_projects,
         project::create,
         project::open,

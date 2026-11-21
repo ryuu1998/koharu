@@ -46,6 +46,8 @@ export function TitleBar() {
   const setSettingsOpen = useKoharuStore((state) => state.setSettingsOpen)
   const batchOpen = useKoharuStore((state) => state.batchOpen)
   const setBatchOpen = useKoharuStore((state) => state.setBatchOpen)
+  const libraryOpen = useKoharuStore((state) => state.libraryOpen)
+  const setLibraryOpen = useKoharuStore((state) => state.setLibraryOpen)
   const { importPages, importing } = useImportPages()
   const { run: exportProject, busy: exporting } = useCommand(
     ['export-project'],
@@ -255,8 +257,21 @@ export function TitleBar() {
           </MenubarMenu>
         </Menubar>
 
-        <button type='button' aria-pressed={batchOpen} onClick={() => setBatchOpen(!batchOpen)} className='relative z-10 ml-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-primary/10 aria-pressed:text-foreground'>
+        <button
+          type='button'
+          aria-pressed={batchOpen}
+          onClick={() => setBatchOpen(!batchOpen)}
+          className='relative z-10 ml-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-primary/10 aria-pressed:text-foreground'
+        >
           {t('batch.tab')}
+        </button>
+        <button
+          type='button'
+          aria-pressed={libraryOpen}
+          onClick={() => setLibraryOpen(!libraryOpen)}
+          className='relative z-10 ml-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-primary/10 aria-pressed:text-foreground'
+        >
+          {t('reader.library')}
         </button>
 
         <div className='min-w-0 flex-1' />
